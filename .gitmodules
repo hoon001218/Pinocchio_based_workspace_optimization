@@ -1,0 +1,3 @@
+[submodule "BGF"]
+	path = BGF
+	url = https://github.com/IROL-SSU/BGF.git
