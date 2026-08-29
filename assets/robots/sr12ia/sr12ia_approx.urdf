@@ -1,0 +1,264 @@
+<?xml version="1.0"?>
+<!--
+  Mesh-free FANUC SR-12iA fallback.
+
+  The 2R-P-R skeleton follows the published FANUC dimensions and the FANUC
+  asset articulation distributed with Isaac Sim:
+    * J1 height: 0.336 m
+    * J1-J2 and J2-J3: 0.450 m each
+    * J3: downward, 0.300 m standard / 0.450 m option
+
+  The compound primitives are deliberately conservative visualization and
+  collision proxies. They are not FANUC CAD and must not be used as a
+  mechanical fabrication drawing. The cutter is provisional; importantly,
+  its geometry is a child of tool0 and does not redefine the robot flange.
+-->
+<robot name="fanuc_sr12ia_approx">
+  <material name="fanuc_yellow"><color rgba="0.96 0.76 0.02 1"/></material>
+  <material name="fanuc_yellow_dark"><color rgba="0.78 0.58 0.00 1"/></material>
+  <material name="fanuc_dark"><color rgba="0.12 0.13 0.14 1"/></material>
+  <material name="metal"><color rgba="0.48 0.50 0.52 1"/></material>
+  <material name="provisional_tool"><color rgba="0.86 0.28 0.06 1"/></material>
+
+  <link name="world"/>
+
+  <!--
+    Current FANUC literature gives a 280 x 364 mm footprint. The J1 axis is
+    140 mm from the front and 224 mm from the rear edge, hence x=-42 mm for
+    the footprint centre when the zero-pose arms point along +x.
+  -->
+  <link name="base_link">
+    <visual name="base_foot">
+      <origin xyz="-0.042 0 0.0275" rpy="0 0 0"/>
+      <geometry><box size="0.364 0.280 0.055"/></geometry>
+      <material name="fanuc_dark"/>
+    </visual>
+    <visual name="base_lower_housing">
+      <origin xyz="-0.058 0 0.1375" rpy="0 0 0"/>
+      <geometry><box size="0.292 0.238 0.220"/></geometry>
+      <material name="fanuc_yellow"/>
+    </visual>
+    <visual name="base_upper_housing">
+      <origin xyz="-0.075 0 0.2705" rpy="0 0 0"/>
+      <geometry><box size="0.250 0.218 0.102"/></geometry>
+      <material name="fanuc_yellow_dark"/>
+    </visual>
+    <visual name="base_rear_motor_tower">
+      <origin xyz="-0.157 0 0.364" rpy="0 0 0"/>
+      <geometry><box size="0.182 0.214 0.185"/></geometry>
+      <material name="fanuc_yellow"/>
+    </visual>
+    <visual name="base_shoulder_crown">
+      <origin xyz="0 0 0.306" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.128" length="0.060"/></geometry>
+      <material name="fanuc_yellow"/>
+    </visual>
+
+    <!--
+      The rear housing overhang visible in the Isaac/FANUC mesh extends beyond
+      the mounting footprint. This envelope includes that overhang and 10 mm
+      of lateral/top clearance.
+    -->
+    <collision name="base_conservative_envelope">
+      <origin xyz="-0.0541 0 0.23325" rpy="0 0 0"/>
+      <geometry><box size="0.4082 0.300 0.4665"/></geometry>
+    </collision>
+  </link>
+
+  <link name="arm_1">
+    <visual name="j1_shoulder_housing">
+      <origin xyz="0 0 -0.010" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.090" length="0.127"/></geometry>
+      <material name="fanuc_yellow"/>
+    </visual>
+    <visual name="first_arm_body">
+      <origin xyz="0.225 0 -0.010" rpy="0 0 0"/>
+      <geometry><box size="0.450 0.150 0.090"/></geometry>
+      <material name="fanuc_yellow"/>
+    </visual>
+    <visual name="first_arm_top_cover">
+      <origin xyz="0.245 0 0.041" rpy="0 0 0"/>
+      <geometry><box size="0.245 0.086 0.025"/></geometry>
+      <material name="fanuc_dark"/>
+    </visual>
+    <visual name="j2_elbow_housing">
+      <origin xyz="0.450 0 -0.010" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.076" length="0.127"/></geometry>
+      <material name="fanuc_yellow"/>
+    </visual>
+
+    <collision name="j1_shoulder_clearance">
+      <origin xyz="0 0 -0.010" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.100" length="0.147"/></geometry>
+    </collision>
+    <collision name="first_arm_clearance">
+      <origin xyz="0.225 0 -0.010" rpy="0 0 0"/>
+      <geometry><box size="0.450 0.200 0.147"/></geometry>
+    </collision>
+    <collision name="j2_elbow_clearance">
+      <origin xyz="0.450 0 -0.010" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.086" length="0.147"/></geometry>
+    </collision>
+  </link>
+
+  <link name="arm_2">
+    <visual name="j2_rotating_cap">
+      <origin xyz="0 0 -0.020" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.094" length="0.127"/></geometry>
+      <material name="fanuc_yellow_dark"/>
+    </visual>
+    <visual name="second_arm_body">
+      <origin xyz="0.225 0 -0.010" rpy="0 0 0"/>
+      <geometry><box size="0.410 0.150 0.090"/></geometry>
+      <material name="fanuc_yellow"/>
+    </visual>
+    <visual name="second_arm_service_cover">
+      <origin xyz="0.245 0 0.047" rpy="0 0 0"/>
+      <geometry><box size="0.275 0.073 0.024"/></geometry>
+      <material name="fanuc_dark"/>
+    </visual>
+    <visual name="j3_column_housing">
+      <origin xyz="0.450 0 0.1265" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.095" length="0.443"/></geometry>
+      <material name="fanuc_yellow"/>
+    </visual>
+    <visual name="j3_guide_bushing">
+      <origin xyz="0.450 0 -0.062" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.065" length="0.034"/></geometry>
+      <material name="fanuc_dark"/>
+    </visual>
+
+    <collision name="j2_rotating_clearance">
+      <origin xyz="0 0 -0.020" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.105" length="0.150"/></geometry>
+    </collision>
+    <collision name="second_arm_clearance">
+      <origin xyz="0.225 0 -0.020" rpy="0 0 0"/>
+      <geometry><box size="0.450 0.200 0.150"/></geometry>
+    </collision>
+    <collision name="j3_column_clearance">
+      <origin xyz="0.450 0 0.12675" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.105" length="0.4635"/></geometry>
+    </collision>
+  </link>
+
+  <!--
+    J3 frame is the moving flange datum; its shaft extends upward from it.
+    The fallback uses the longer 450 mm-option shaft as a conservative shape
+    for both options. The 300 mm manufacturer mesh is used when available.
+  -->
+  <link name="vertical_slide">
+    <visual name="j3_spindle">
+      <origin xyz="0 0 0.366" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.022" length="0.732"/></geometry>
+      <material name="metal"/>
+    </visual>
+    <visual name="j3_lower_collar">
+      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.052" length="0.050"/></geometry>
+      <material name="fanuc_dark"/>
+    </visual>
+    <collision name="j3_spindle_clearance">
+      <origin xyz="0 0 0.371" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.032" length="0.742"/></geometry>
+    </collision>
+    <collision name="j3_collar_clearance">
+      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.066" length="0.060"/></geometry>
+    </collision>
+  </link>
+
+  <!-- J4 rotates about the J3 spindle and has no translational offset. -->
+  <link name="tool_head">
+    <visual name="j4_wrist_hub">
+      <origin xyz="0 0 -0.012" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.067" length="0.038"/></geometry>
+      <material name="fanuc_yellow"/>
+    </visual>
+    <visual name="flange_plate">
+      <origin xyz="0 0 -0.034" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.052" length="0.012"/></geometry>
+      <material name="fanuc_dark"/>
+    </visual>
+    <collision name="wrist_conservative_envelope">
+      <origin xyz="0 0 -0.0175" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.082" length="0.055"/></geometry>
+    </collision>
+  </link>
+
+  <!-- The flange frame is intentionally empty and exactly coincident with J4. -->
+  <link name="tool0"/>
+
+  <!-- Provisional box-opening tool. Replace when the selected tool CAD exists. -->
+  <link name="cutter_proxy">
+    <visual name="cutter_mount">
+      <origin xyz="0.055 0 -0.035" rpy="0 0 0"/>
+      <geometry><box size="0.110 0.070 0.070"/></geometry>
+      <material name="provisional_tool"/>
+    </visual>
+    <visual name="cutter_body">
+      <origin xyz="0.145 0 -0.0525" rpy="0 0 0"/>
+      <geometry><box size="0.120 0.052 0.055"/></geometry>
+      <material name="fanuc_dark"/>
+    </visual>
+    <visual name="cutter_blade_guard">
+      <origin xyz="0.205 0 -0.0875" rpy="0 0 0"/>
+      <geometry><box size="0.030 0.025 0.045"/></geometry>
+      <material name="metal"/>
+    </visual>
+    <collision name="cutter_conservative_envelope">
+      <origin xyz="0.120 0 -0.055" rpy="0 0 0"/>
+      <geometry><box size="0.250 0.090 0.110"/></geometry>
+    </collision>
+  </link>
+
+  <joint name="base_joint" type="fixed">
+    <parent link="world"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <joint name="joint1" type="revolute">
+    <parent link="base_link"/>
+    <child link="arm_1"/>
+    <origin xyz="0 0 0.336" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-2.530727416" upper="2.530727416" effort="1" velocity="7.679448709"/>
+  </joint>
+
+  <joint name="joint2" type="revolute">
+    <parent link="arm_1"/>
+    <child link="arm_2"/>
+    <origin xyz="0.450 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-2.530727416" upper="2.530727416" effort="1" velocity="8.901179186"/>
+  </joint>
+
+  <joint name="joint3" type="prismatic">
+    <parent link="arm_2"/>
+    <child link="vertical_slide"/>
+    <origin xyz="0.450 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 -1"/>
+    <limit lower="0" upper="0.450" effort="1" velocity="2.8"/>
+  </joint>
+
+  <joint name="joint4" type="revolute">
+    <parent link="vertical_slide"/>
+    <child link="tool_head"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-12.566370614" upper="12.566370614" effort="1" velocity="43.633231300"/>
+  </joint>
+
+  <joint name="flange-tool0" type="fixed">
+    <parent link="tool_head"/>
+    <child link="tool0"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <joint name="tool0-provisional-cutter" type="fixed">
+    <parent link="tool0"/>
+    <child link="cutter_proxy"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+</robot>

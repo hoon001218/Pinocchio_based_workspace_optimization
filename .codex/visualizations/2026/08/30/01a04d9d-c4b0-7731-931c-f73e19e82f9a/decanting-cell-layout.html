@@ -1,0 +1,372 @@
+<div id="decanting-cell-vis-01a04d9d">
+  <div class="viz-controls" aria-label="장면 변수">
+    <label class="form-label" for="dc-lift">
+      리프트 높이 <output id="dc-lift-value" for="dc-lift">0 mm</output>
+      <input class="form-range" id="dc-lift" type="range" min="0" max="760" step="10" value="0">
+    </label>
+    <label class="form-label" for="dc-sku">
+      박스 SKU
+      <select class="form-select" id="dc-sku">
+        <option value="123591">123591 · 390×237×327</option>
+        <option value="430060">430060 · 520×340×310</option>
+        <option value="180043">180043 · 513×275×410</option>
+        <option value="049995">049995 · 517×503×545</option>
+        <option value="000509">000509 · 560×480×240</option>
+      </select>
+    </label>
+    <label class="form-label" for="dc-j3">
+      SR J3 옵션
+      <select class="form-select" id="dc-j3">
+        <option value="300">300 mm</option>
+        <option value="450">450 mm</option>
+      </select>
+    </label>
+    <div class="viz-row" role="group" aria-label="카메라 시점">
+      <button class="btn btn-primary" type="button" data-view="iso" aria-pressed="true">3D</button>
+      <button class="btn" type="button" data-view="top" aria-pressed="false">평면</button>
+      <button class="btn" type="button" data-view="side" aria-pressed="false">측면</button>
+    </div>
+  </div>
+
+  <div class="dc-stage" id="dc-stage" role="img" aria-label="팔레트, 3단 컨베이어, 작업대, 토트, UR20, SR-12iA와 설치 후보영역을 보여주는 3차원 배치도"></div>
+
+  <div class="dc-detail text-small" id="dc-detail" aria-live="polite"></div>
+
+  <div class="dc-legend text-small" aria-label="범례">
+    <span><i class="dc-swatch dc-conveyor"></i>컨베이어·작업대</span>
+    <span><i class="dc-swatch dc-pallet"></i>팔레트·박스</span>
+    <span><i class="dc-swatch dc-tote"></i>대표 tote</span>
+    <span><i class="dc-swatch dc-ur"></i>UR20</span>
+    <span><i class="dc-swatch dc-sr"></i>SR-12iA·보수 envelope</span>
+    <span><i class="dc-swatch dc-region"></i>base 원시 후보영역</span>
+  </div>
+</div>
+
+<style>
+  #decanting-cell-vis-01a04d9d {
+    color: var(--foreground);
+    width: 100%;
+  }
+  #decanting-cell-vis-01a04d9d .dc-stage {
+    position: relative;
+    width: 100%;
+    height: clamp(300px, 62vw, 520px);
+    overflow: hidden;
+  }
+  #decanting-cell-vis-01a04d9d .dc-stage canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  #decanting-cell-vis-01a04d9d .dc-detail {
+    color: var(--muted-foreground);
+    min-height: 1.5em;
+    padding-block: 0.5rem;
+  }
+  #decanting-cell-vis-01a04d9d .dc-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    color: var(--muted-foreground);
+  }
+  #decanting-cell-vis-01a04d9d .dc-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  #decanting-cell-vis-01a04d9d .dc-swatch {
+    display: inline-block;
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 999px;
+    background: var(--muted);
+  }
+  #decanting-cell-vis-01a04d9d .dc-conveyor { background: var(--viz-series-1); }
+  #decanting-cell-vis-01a04d9d .dc-pallet { background: var(--viz-series-3); }
+  #decanting-cell-vis-01a04d9d .dc-tote { background: var(--viz-series-5); }
+  #decanting-cell-vis-01a04d9d .dc-ur { background: var(--viz-series-2); }
+  #decanting-cell-vis-01a04d9d .dc-sr { background: var(--viz-series-6); }
+  #decanting-cell-vis-01a04d9d .dc-region { background: var(--accent); }
+  @media (max-width: 520px) {
+    #decanting-cell-vis-01a04d9d .dc-stage { height: 340px; }
+  }
+</style>
+
+<script type="module">
+  import * as THREE from "https://esm.sh/three@0.164.1";
+  import { OrbitControls } from "https://esm.sh/three@0.164.1/examples/jsm/controls/OrbitControls.js";
+
+  const root = document.getElementById("decanting-cell-vis-01a04d9d");
+  const stage = root.querySelector("#dc-stage");
+  const liftInput = root.querySelector("#dc-lift");
+  const liftValue = root.querySelector("#dc-lift-value");
+  const skuSelect = root.querySelector("#dc-sku");
+  const j3Select = root.querySelector("#dc-j3");
+  const detail = root.querySelector("#dc-detail");
+  const viewButtons = [...root.querySelectorAll("[data-view]")];
+  const token = (name) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${name})`;
+    probe.className = "sr-only";
+    root.appendChild(probe);
+    const resolved = getComputedStyle(probe).color;
+    probe.remove();
+    return resolved;
+  };
+
+  const colors = {
+    background: new THREE.Color(token("--background")),
+    foreground: new THREE.Color(token("--foreground")),
+    muted: new THREE.Color(token("--muted")),
+    neutral: new THREE.Color(token("--muted-foreground")),
+    conveyor: new THREE.Color(token("--viz-series-1")),
+    ur: new THREE.Color(token("--viz-series-2")),
+    pallet: new THREE.Color(token("--viz-series-3")),
+    box: new THREE.Color(token("--viz-series-4")),
+    tote: new THREE.Color(token("--viz-series-5")),
+    sr: new THREE.Color(token("--viz-series-6")),
+    region: new THREE.Color(token("--accent")),
+  };
+
+  const skus = {
+    "123591": [0.390, 0.237, 0.327],
+    "430060": [0.520, 0.340, 0.310],
+    "180043": [0.513, 0.275, 0.410],
+    "049995": [0.517, 0.503, 0.545],
+    "000509": [0.560, 0.480, 0.240],
+  };
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(colors.background, 1);
+  stage.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(36, 1, 0.05, 40);
+  camera.up.set(0, 0, 1);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.target.set(-0.7, -6.9, 1.05);
+  camera.position.set(-4.8, -12.4, 6.5);
+
+  scene.add(new THREE.HemisphereLight(colors.background, colors.neutral, 2.2));
+  const keyLight = new THREE.DirectionalLight(colors.foreground, 2.4);
+  keyLight.position.set(-3, -10, 10);
+  scene.add(keyLight);
+
+  const material = (color, opacity = 1, wireframe = false) => new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.72,
+    metalness: 0.04,
+    transparent: opacity < 1,
+    opacity,
+    wireframe,
+    depthWrite: opacity >= 0.5,
+  });
+
+  const mats = {
+    floor: material(colors.muted, 0.52),
+    conveyor: material(colors.conveyor, 0.82),
+    stand: material(colors.neutral, 0.88),
+    pallet: material(colors.pallet, 0.94),
+    box: material(colors.box, 0.30),
+    tote: material(colors.tote, 0.54),
+    pedestal: material(colors.neutral, 0.85),
+    ur: material(colors.ur, 0.96),
+    urJoint: material(colors.neutral, 0.96),
+    sr: material(colors.sr, 0.96),
+    region: material(colors.region, 0.17),
+    plane: material(colors.region, 0.08),
+    srEnvelope: material(colors.sr, 0.16, true),
+  };
+
+  function addBox(size, center, mat, yaw = 0, parent = scene) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), mat);
+    mesh.position.set(...center);
+    mesh.rotation.z = yaw;
+    parent.add(mesh);
+    return mesh;
+  }
+
+  function addCylinder(radius, height, center, mat, parent = scene) {
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, height, 24), mat);
+    mesh.position.set(...center);
+    mesh.rotation.x = Math.PI / 2;
+    parent.add(mesh);
+    return mesh;
+  }
+
+  function addLink(start, end, radius, mat, parent = scene) {
+    const a = new THREE.Vector3(...start);
+    const b = new THREE.Vector3(...end);
+    const direction = b.clone().sub(a);
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, direction.length(), 18), mat);
+    mesh.position.copy(a.add(b).multiplyScalar(0.5));
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+    parent.add(mesh);
+    return mesh;
+  }
+
+  function localPoint(base, local) {
+    const c = Math.cos(base[3]);
+    const s = Math.sin(base[3]);
+    return [base[0] + c * local[0] - s * local[1], base[1] + s * local[0] + c * local[1], base[2] + local[2]];
+  }
+
+  addBox([5.4, 10.7, 0.02], [-0.85, -5.55, -0.01], mats.floor);
+
+  [[2.36, "3"], [1.18, "2"], [0.61, "1"]].forEach(([z]) => {
+    addBox([0.669039, 9.2, 0.10], [0.7, -5.542254925, z], mats.conveyor);
+  });
+  [
+    [-0.554982, -5.032856], [-0.554982, -4.357999],
+    [-0.554982, -8.284995], [-0.554982, -8.954703],
+  ].forEach(([x, y]) => addBox([1.8, 0.65, 0.10], [x, y, 0.61], mats.conveyor));
+
+  addBox([0.05, 0.05, 3.05], [-2.152363, -8.066484, 1.525], mats.stand);
+  addBox([0.05, 0.85, 0.05], [-2.152363, -7.666484, 3.05], mats.stand);
+  addBox([0.05, 0.05, 1.15], [-1.521816, -8.287957, 0.575], mats.stand);
+
+  addBox([1.842843323, 1.29612, 0.012], [-0.5559411615, -7.311935, 0.006], mats.region);
+  addBox([1.842843323, 0.008, 2.5], [-0.5559411615, -6.663875, 1.25], mats.plane);
+
+  const pallet = addBox([1.35, 1.0, 0.15], [-2.152362823, -7.316484451, 0.075], mats.pallet);
+  const boxGroup = new THREE.Group();
+  scene.add(boxGroup);
+  addBox([0.660, 0.440, 0.300], [-0.961626798, -8.287957191, 0.810], mats.tote);
+
+  const urBase = [-0.984849334, -7.267639160, 0.730275512, Math.PI / 2];
+  addBox([0.30, 0.30, urBase[2]], [urBase[0], urBase[1], urBase[2] / 2], mats.pedestal, urBase[3]);
+  const urGroup = new THREE.Group();
+  scene.add(urGroup);
+  addCylinder(0.13, 0.2363, [urBase[0], urBase[1], urBase[2] + 0.11815], mats.urJoint, urGroup);
+  const urLocal = [
+    [0, 0, 0.236], [0.10, 0, 0.39], [0.72, 0, 0.83],
+    [0.58, 0.13, 1.32], [0.91, 0.10, 1.38], [0.91, 0.10, 1.10],
+  ];
+  const urPoints = urLocal.map((point) => localPoint(urBase, point));
+  urPoints.slice(0, -1).forEach((point, index) => addLink(point, urPoints[index + 1], index < 2 ? 0.085 : 0.065, mats.ur, urGroup));
+  urPoints.slice(1, -1).forEach((point) => addCylinder(0.095, 0.10, point, mats.urJoint, urGroup));
+  addLink(urPoints[4], urPoints[5], 0.012, mats.urJoint, urGroup);
+  addCylinder(0.075, 0.025, [urPoints[5][0], urPoints[5][1], urPoints[5][2] - 0.012], mats.urJoint, urGroup);
+
+  const srBase = [-0.233218148, -7.073643684, 0.554805667, -Math.PI / 2];
+  addBox([1.10, 0.75, srBase[2]], [srBase[0], srBase[1] - 0.284964, srBase[2] / 2], mats.pedestal, srBase[3]);
+  [[0.598084, -0.4], [0.598084, 0.4]].forEach(([x, y]) => {
+    const p = localPoint([srBase[0], srBase[1], 0, srBase[3]], [x, y, 0.403507]);
+    addBox([0.05, 0.05, 0.807014], p, mats.stand);
+  });
+  const srGroup = new THREE.Group();
+  const srEnvelopeGroup = new THREE.Group();
+  scene.add(srGroup, srEnvelopeGroup);
+
+  function rebuildSr() {
+    srGroup.clear();
+    srEnvelopeGroup.clear();
+    addBox([0.28, 0.36, 0.336], [srBase[0], srBase[1], srBase[2] + 0.168], mats.sr, srBase[3], srGroup);
+    const p0 = localPoint(srBase, [0, 0, 0.336]);
+    const p1 = localPoint(srBase, [0.45, 0, 0.336]);
+    const p2 = localPoint(srBase, [0.90, 0, 0.336]);
+    addLink(p0, p1, 0.065, mats.sr, srGroup);
+    addLink(p1, p2, 0.060, mats.sr, srGroup);
+    addCylinder(0.085, 0.09, p0, mats.urJoint, srGroup);
+    addCylinder(0.080, 0.08, p1, mats.urJoint, srGroup);
+    const j3 = Number(j3Select.value) / 1000;
+    const tool = [p2[0], p2[1], p2[2] - j3];
+    addLink(p2, tool, 0.035, mats.urJoint, srGroup);
+    addBox([0.16, 0.05, 0.04], [tool[0], tool[1] - 0.08, tool[2]], mats.urJoint, srBase[3], srGroup);
+    const envelopeHeight = j3 + 0.10;
+    const envelope = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, envelopeHeight, 48, 1, true), mats.srEnvelope);
+    envelope.rotation.x = Math.PI / 2;
+    envelope.position.set(srBase[0], srBase[1], p2[2] - j3 / 2);
+    srEnvelopeGroup.add(envelope);
+  }
+
+  function updateScenario() {
+    const liftMm = Number(liftInput.value);
+    const lift = liftMm / 1000;
+    const dimensions = skus[skuSelect.value];
+    liftValue.value = `${liftMm} mm`;
+    pallet.position.z = lift + 0.075;
+    boxGroup.clear();
+    const xOffset = 1.35 / 2 - dimensions[0] / 2;
+    const yOffset = 1.0 / 2 - dimensions[1] / 2;
+    [-1, 1].forEach((sx) => [-1, 1].forEach((sy) => {
+      addBox(
+        dimensions,
+        [-2.152362823 + sx * xOffset, -7.316484451 + sy * yOffset, lift + 0.15 + dimensions[2] / 2],
+        mats.box,
+        0,
+        boxGroup,
+      );
+    }));
+    rebuildSr();
+    const topMm = Math.round((lift + 0.15 + dimensions[2]) * 1000);
+    detail.textContent = `팔레트 지지면 ${liftMm} mm · ${skuSelect.value} 박스 상단 ${topMm} mm · 네 박스는 동시 적재가 아닌 corner 평가 대안 · SR J3 ${j3Select.value} mm`;
+  }
+
+  const views = {
+    iso: { position: [-4.8, -12.4, 6.5], target: [-0.7, -6.9, 1.05], up: [0, 0, 1] },
+    top: { position: [-0.7, -6.9, 13], target: [-0.7, -6.9, 0], up: [0, 1, 0] },
+    side: { position: [-8.5, -7.2, 2.7], target: [-0.5, -7.2, 1.1], up: [0, 0, 1] },
+  };
+  let cameraTween = null;
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function setView(name) {
+    viewButtons.forEach((button) => {
+      const selected = button.dataset.view === name;
+      button.setAttribute("aria-pressed", String(selected));
+      button.classList.toggle("btn-primary", selected);
+    });
+    const destination = views[name];
+    if (reducedMotion) {
+      camera.position.set(...destination.position);
+      camera.up.set(...destination.up);
+      controls.target.set(...destination.target);
+      controls.update();
+      return;
+    }
+    cameraTween = {
+      start: performance.now(),
+      fromPosition: camera.position.clone(),
+      toPosition: new THREE.Vector3(...destination.position),
+      fromTarget: controls.target.clone(),
+      toTarget: new THREE.Vector3(...destination.target),
+      fromUp: camera.up.clone(),
+      toUp: new THREE.Vector3(...destination.up),
+    };
+  }
+
+  liftInput.addEventListener("input", updateScenario);
+  skuSelect.addEventListener("change", updateScenario);
+  j3Select.addEventListener("change", updateScenario);
+  viewButtons.forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
+
+  const resizeObserver = new ResizeObserver(() => {
+    const width = Math.max(stage.clientWidth, 1);
+    const height = Math.max(stage.clientHeight, 1);
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+  });
+  resizeObserver.observe(stage);
+
+  function animate(now) {
+    if (cameraTween) {
+      const t = Math.min((now - cameraTween.start) / 600, 1);
+      const eased = t * t * (3 - 2 * t);
+      camera.position.lerpVectors(cameraTween.fromPosition, cameraTween.toPosition, eased);
+      controls.target.lerpVectors(cameraTween.fromTarget, cameraTween.toTarget, eased);
+      camera.up.lerpVectors(cameraTween.fromUp, cameraTween.toUp, eased).normalize();
+      if (t >= 1) cameraTween = null;
+    }
+    controls.update();
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  }
+
+  updateScenario();
+  requestAnimationFrame(animate);
+</script>

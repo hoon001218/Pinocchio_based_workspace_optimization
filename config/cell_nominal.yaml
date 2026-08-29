@@ -1,0 +1,154 @@
+schema_version: 1
+units: m
+
+provenance:
+  geometry_source: ../cu_usd_simplified.usd
+  frame_source: ../BGF/load_group_transforms_true.json
+  notes:
+    - Fixed collision geometry is limited to geometry present in the simplified USD.
+    - The missing GroundPlane payload is replaced by the z=0 floor.
+    - Missing RealSense payloads are excluded; their support poles remain.
+    - USD test-box dimensions and temporary below-floor pedestal heights are overridden.
+
+world:
+  up_axis: Z
+  floor_z_m: 0.0
+
+installation_region:
+  interpretation: >-
+    Raw one-cell strip between the corrected pallet right face and the main
+    conveyor left face. Its y extent starts at the Conv5A north edge and spans
+    1.29612 m toward +Y. Footprints, yaw, and clearance must still be checked.
+  raw_xy_min_m: [-1.477362823, -7.959995]
+  raw_xy_max_m: [0.3654805, -6.663875]
+  offset_from_worktable_m: 1.29612
+  nominal_yaw_center_bounds:
+    ur20:
+      yaw_deg: 90.0
+      xy_min_m: [-1.327362823, -7.809995]
+      xy_max_m: [0.2154805, -6.813875]
+    sr12ia:
+      yaw_deg: -90.0
+      xy_min_m: [-1.102362823, -7.125031]
+      xy_max_m: [-0.0095195, -6.928911]
+
+static_boxes:
+  - name: conveyor_level_3
+    role: conveyor
+    center_m: [0.7, -5.542254925, 2.36]
+    size_m: [0.669039, 9.2, 0.10]
+  - name: conveyor_level_2
+    role: conveyor
+    center_m: [0.7, -5.542254925, 1.18]
+    size_m: [0.669039, 9.2, 0.10]
+  - name: conveyor_level_1
+    role: conveyor
+    center_m: [0.7, -5.542254925, 0.61]
+    size_m: [0.669039, 9.2, 0.10]
+  - name: worktable_far_a
+    role: worktable
+    center_m: [-0.554982, -5.032856, 0.61]
+    size_m: [1.8, 0.65, 0.10]
+  - name: worktable_far_b
+    role: worktable
+    center_m: [-0.554982, -4.357999, 0.61]
+    size_m: [1.8, 0.65, 0.10]
+  - name: worktable_current_a
+    role: worktable
+    center_m: [-0.554982, -8.284995, 0.61]
+    size_m: [1.8, 0.65, 0.10]
+  - name: worktable_current_b
+    role: worktable
+    center_m: [-0.554982, -8.954703, 0.61]
+    size_m: [1.8, 0.65, 0.10]
+  - name: pallet_camera_pole
+    role: camera_support
+    center_m: [-2.152363, -8.066484, 1.525]
+    size_m: [0.05, 0.05, 3.05]
+  - name: pallet_camera_arm
+    role: camera_support
+    center_m: [-2.152363, -7.666484, 3.05]
+    size_m: [0.05, 0.85, 0.05]
+  - name: tote_camera_pole
+    role: camera_support
+    center_m: [-1.521816, -8.287957, 0.575]
+    size_m: [0.05, 0.05, 1.15]
+
+reference_frames_file: reference_frames.json
+
+pallet:
+  center_xy_m: [-2.152362823, -7.316484451]
+  size_m: [1.35, 1.0, 0.15]
+  lift_support_height_range_m: [0.0, 0.760]
+  corner_margin_m: 0.0
+  corner_samples_are_alternatives: true
+
+box_skus:
+  "123591":
+    label: "유앤)스웨디시스타일젤리"
+    size_m: [0.390, 0.237, 0.327]
+  "430060":
+    label: "썬푸드)오징어와땅콩85g"
+    size_m: [0.520, 0.340, 0.310]
+  "180043":
+    label: "화인)반코팅장갑"
+    size_m: [0.513, 0.275, 0.410]
+  "049995":
+    label: "리앤웰)비말검정대형7P"
+    size_m: [0.517, 0.503, 0.545]
+  "000509":
+    label: "PBICK)일회용접시대10P"
+    size_m: [0.560, 0.480, 0.240]
+
+tote:
+  size_m: [0.660, 0.440, 0.300]
+  representative_frame: ToteLoadFrame
+  support_surface_z_m: 0.660
+
+robots:
+  ur20:
+    urdf: ../assets/robots/ur20/ur20_primitive.urdf
+    nominal_base: [-0.984849334, -7.267639160, 0.730275512, 90.0]
+    nominal_q_deg: [0.0, -90.0, 90.0, -90.0, -90.0, 0.0]
+    pedestal:
+      size_xy_m: [0.30, 0.30]
+      center_offset_local_xy_m: [0.0, 0.0]
+    suction_proxy:
+      cylinder_length_m: 0.20
+      cylinder_radius_m: 0.01
+      pad_radius_m: 0.075
+      pad_thickness_m: 0.024
+      tcp_translation_local_m: [0.0, 0.0, 0.224]
+  sr12ia:
+    urdf: ../assets/robots/sr12ia/sr12ia_approx.urdf
+    nominal_base: [-0.233218148, -7.073643684, 0.554805667, -90.0]
+    # Provisional stopped/working pose: cutter_tcp coincides with
+    # UncasingLoadFrame instead of extending outside the support-cube top.
+    nominal_q: [-0.698469601, 1.396939203, 0.109340672, 2.443123052]
+    pedestal:
+      size_xy_m: [1.10, 0.75]
+      center_offset_local_xy_m: [0.284964, 0.0]
+    module_camera_mode: with_base
+    module_camera_boxes_local:
+      - name: uncasing_camera_pole_left
+        role: camera_support
+        center_m: [0.598084, -0.4, 0.403507]
+        size_m: [0.05, 0.05, 0.807014]
+      - name: uncasing_camera_pole_right
+        role: camera_support
+        center_m: [0.598084, 0.4, 0.403507]
+        size_m: [0.05, 0.05, 0.807014]
+    cutter_proxy:
+      center_local_m: [0.120, 0.0, -0.055]
+      size_m: [0.250, 0.090, 0.110]
+      tcp_translation_local_m: [0.220, 0.0, -0.110]
+    workspace:
+      link_lengths_m: [0.45, 0.45]
+      arm_plane_height_m: 0.336
+      q1_range_deg: [-145.0, 145.0]
+      q2_range_deg: [-145.0, 145.0]
+      j3_stroke_options_m: [0.30, 0.45]
+      total_height_options_m: [0.918, 1.068]
+      q4_range_deg: [-720.0, 720.0]
+      tool_radius_m: 0.05
+      safety_clearance_m: 0.0

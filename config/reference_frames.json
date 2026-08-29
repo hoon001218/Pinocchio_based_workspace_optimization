@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "units": "m",
+  "reference_frame": "World",
+  "transform_semantics": "World_T_child",
+  "provenance": "../BGF/load_group_transforms_true.json",
+  "frames": {
+    "ConveyorGroup": {
+      "translation_m": [0.699999988, -5.542254925, 0.0],
+      "rotation_xyzw": [0.0, 0.0, 0.0, 1.0]
+    },
+    "PalletGroup": {
+      "translation_m": [-2.152362823, -7.316484451, 0.142597511],
+      "rotation_xyzw": [0.0, 0.0, 0.0, 1.0]
+    },
+    "ToteLoadFrame": {
+      "translation_m": [-0.961626798, -8.287957191, 0.781106591],
+      "rotation_xyzw": [0.0, 0.0, 0.0, 1.0]
+    },
+    "TotePickupFrame": {
+      "translation_m": [0.683292568, -7.362836361, 1.269350886],
+      "rotation_xyzw": [0.0, 0.0, 0.0, 1.0]
+    },
+    "ToteSupplyFrame": {
+      "translation_m": [0.304304749, -8.287957191, 0.781106591],
+      "rotation_xyzw": [0.0, 0.0, 0.0, 1.0]
+    },
+    "UncasingLoadFrame": {
+      "translation_m": [-0.233218148, -7.542888165, 0.671464995],
+      "rotation_xyzw": [0.0, 0.0, 1.0, 0.0]
+    },
+    "WasteFrame": {
+      "translation_m": [0.683292568, -7.362836361, 2.457946539],
+      "rotation_xyzw": [0.0, 0.0, 0.0, 1.0]
+    }
+  }
+}
+

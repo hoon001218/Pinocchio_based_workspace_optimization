@@ -1,0 +1,224 @@
+<?xml version="1.0"?>
+<!--
+  Primitive visual/collision approximation of a UR20.
+
+  Joint origins and limits follow UniversalRobots/
+  Universal_Robots_ROS2_Description 4.3.1 and the nominal model previously
+  used in BGF/example/pixi. The cylinders and boxes are intentionally local,
+  mesh-free proxies; they are not official UR graphical assets.
+-->
+<robot name="ur20_primitive">
+  <material name="ur_gray"><color rgba="0.58 0.61 0.63 1"/></material>
+  <material name="ur_blue"><color rgba="0.12 0.38 0.56 1"/></material>
+  <material name="dark"><color rgba="0.16 0.18 0.20 1"/></material>
+  <material name="suction"><color rgba="0.12 0.12 0.13 1"/></material>
+
+  <link name="world"/>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.11815" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.130" length="0.2363"/></geometry>
+      <material name="dark"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.11815" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.135" length="0.2363"/></geometry>
+    </collision>
+  </link>
+
+  <link name="base_link_inertia"/>
+
+  <link name="shoulder_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.145" length="0.190"/></geometry>
+      <material name="ur_blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.150" length="0.200"/></geometry>
+    </collision>
+  </link>
+
+  <link name="upper_arm_link">
+    <visual>
+      <origin xyz="-0.431 0 0" rpy="0 -1.57079632679 0"/>
+      <geometry><cylinder radius="0.085" length="0.862"/></geometry>
+      <material name="ur_gray"/>
+    </visual>
+    <collision>
+      <origin xyz="-0.431 0 0" rpy="0 -1.57079632679 0"/>
+      <geometry><cylinder radius="0.095" length="0.862"/></geometry>
+    </collision>
+  </link>
+
+  <link name="forearm_link">
+    <visual>
+      <origin xyz="-0.36435 0 0.1005" rpy="0 -1.30193 0"/>
+      <geometry><cylinder radius="0.075" length="0.75591"/></geometry>
+      <material name="ur_gray"/>
+    </visual>
+    <collision>
+      <origin xyz="-0.36435 0 0.1005" rpy="0 -1.30193 0"/>
+      <geometry><cylinder radius="0.085" length="0.75591"/></geometry>
+    </collision>
+  </link>
+
+  <link name="wrist_1_link">
+    <visual>
+      <origin xyz="0 -0.07965 0" rpy="1.57079632679 0 0"/>
+      <geometry><cylinder radius="0.090" length="0.1593"/></geometry>
+      <material name="ur_blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0 -0.07965 0" rpy="1.57079632679 0 0"/>
+      <geometry><cylinder radius="0.098" length="0.1593"/></geometry>
+    </collision>
+  </link>
+
+  <link name="wrist_2_link">
+    <visual>
+      <origin xyz="0 0.07715 0" rpy="-1.57079632679 0 0"/>
+      <geometry><cylinder radius="0.082" length="0.1543"/></geometry>
+      <material name="ur_gray"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0.07715 0" rpy="-1.57079632679 0 0"/>
+      <geometry><cylinder radius="0.090" length="0.1543"/></geometry>
+    </collision>
+  </link>
+
+  <link name="wrist_3_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.075" length="0.125"/></geometry>
+      <material name="ur_blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.083" length="0.135"/></geometry>
+    </collision>
+  </link>
+
+  <link name="ft_frame"/>
+  <link name="base"/>
+  <link name="flange"/>
+  <link name="tool0"/>
+
+  <link name="suction_gripper">
+    <visual>
+      <origin xyz="0 0 0.10" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.010" length="0.20"/></geometry>
+      <material name="suction"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.10" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.010" length="0.20"/></geometry>
+    </collision>
+  </link>
+
+  <link name="suction_pad">
+    <visual>
+      <origin xyz="0 0 0.012" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.075" length="0.024"/></geometry>
+      <material name="suction"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.012" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.075" length="0.024"/></geometry>
+    </collision>
+  </link>
+
+  <joint name="base_joint" type="fixed">
+    <parent link="world"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <joint name="base_link-base_link_inertia" type="fixed">
+    <parent link="base_link"/>
+    <child link="base_link_inertia"/>
+    <origin xyz="0 0 0" rpy="0 0 3.141592653589793"/>
+  </joint>
+
+  <joint name="shoulder_pan_joint" type="revolute">
+    <parent link="base_link_inertia"/>
+    <child link="shoulder_link"/>
+    <origin xyz="0 0 0.2363" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-6.28318530718" upper="6.28318530718" effort="738" velocity="2.09439510239"/>
+  </joint>
+
+  <joint name="shoulder_lift_joint" type="revolute">
+    <parent link="shoulder_link"/>
+    <child link="upper_arm_link"/>
+    <origin xyz="0 0 0" rpy="1.570796327 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-6.28318530718" upper="6.28318530718" effort="738" velocity="2.09439510239"/>
+  </joint>
+
+  <joint name="elbow_joint" type="revolute">
+    <parent link="upper_arm_link"/>
+    <child link="forearm_link"/>
+    <origin xyz="-0.862 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14159265359" upper="3.14159265359" effort="433" velocity="2.61799387799"/>
+  </joint>
+
+  <joint name="wrist_1_joint" type="revolute">
+    <parent link="forearm_link"/>
+    <child link="wrist_1_link"/>
+    <origin xyz="-0.7287 0 0.201" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-6.28318530718" upper="6.28318530718" effort="107" velocity="3.66519142919"/>
+  </joint>
+
+  <joint name="wrist_2_joint" type="revolute">
+    <parent link="wrist_1_link"/>
+    <child link="wrist_2_link"/>
+    <origin xyz="0 -0.1593 0" rpy="1.570796327 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-6.28318530718" upper="6.28318530718" effort="107" velocity="3.66519142919"/>
+  </joint>
+
+  <joint name="wrist_3_joint" type="revolute">
+    <parent link="wrist_2_link"/>
+    <child link="wrist_3_link"/>
+    <origin xyz="0 0.1543 0" rpy="1.57079632659 3.14159265359 3.14159265359"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-6.28318530718" upper="6.28318530718" effort="107" velocity="3.66519142919"/>
+  </joint>
+
+  <joint name="wrist_3_link-ft_frame" type="fixed">
+    <parent link="wrist_3_link"/>
+    <child link="ft_frame"/>
+    <origin xyz="0 0 0" rpy="3.14159265359 0 0"/>
+  </joint>
+  <joint name="base_link-base_fixed_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="base"/>
+    <origin xyz="0 0 0" rpy="0 0 3.14159265359"/>
+  </joint>
+  <joint name="wrist_3-flange" type="fixed">
+    <parent link="wrist_3_link"/>
+    <child link="flange"/>
+    <origin xyz="0 0 0" rpy="0 -1.57079632679 -1.57079632679"/>
+  </joint>
+  <joint name="flange-tool0" type="fixed">
+    <parent link="flange"/>
+    <child link="tool0"/>
+    <origin xyz="0 0 0" rpy="1.57079632679 0 1.57079632679"/>
+  </joint>
+  <joint name="tool0-suction_gripper" type="fixed">
+    <parent link="tool0"/>
+    <child link="suction_gripper"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+  <joint name="suction_gripper-pad" type="fixed">
+    <parent link="suction_gripper"/>
+    <child link="suction_pad"/>
+    <origin xyz="0 0 0.20" rpy="0 0 0"/>
+  </joint>
+</robot>
+
