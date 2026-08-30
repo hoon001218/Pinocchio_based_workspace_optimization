@@ -152,7 +152,14 @@ conda run --prefix .\.venv decanting-playback --open
 
 UI에서 SKU, pallet corner, 동시/순차 모드, 공정 단계, 세부 check와 sample을
 선택하면 저장된 로봇 자세 및 manipulability ellipsoid가 표시된다. UI에서
-IK를 다시 계산하지 않는다.
+IK를 다시 계산하지 않는다. 숫자 파라미터는 슬라이더와 직접 입력을 함께
+제공하지만, 둘 다 현재 cache에 있는 값만 정확히 선택한다. 입력한 값이
+cache에 없으면 오류와 사용 가능한 값 목록을 표시한다. 새 값을 사용하려면
+해당 case-grid YAML에 값을 추가하고 `decanting-precompute`를 다시 실행한다.
+
+기본 working cache는 검증된 성공 배치를 빠르게 여는 용도라서 UR/SR base,
+lift, tote offset, J3가 각각 한 값뿐이다. 이 축의 slider가 비활성화되는 것은
+정상이다. SKU, corner와 coordination mode는 복수 선택할 수 있다.
 
 720-case nominal 진단 cache를 열려면 파일을 명시한다.
 

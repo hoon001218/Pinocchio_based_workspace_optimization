@@ -161,6 +161,10 @@ fieldset {{ margin: 0 0 12px; padding: 10px; border: 1px solid #49515d; border-r
 legend {{ padding: 0 5px; color: #b8c0cc; }}
 label {{ display: grid; grid-template-columns: 1fr minmax(118px, 1.2fr); align-items: center; gap: 8px; margin: 7px 0; font-size: 13px; }}
 select, input, button {{ width: 100%; min-width: 0; padding: 6px 7px; border: 1px solid #596270; border-radius: 5px; background: #171a1f; color: #eef1f5; }}
+input[type="range"] {{ padding: 0; }}
+.numeric-control {{ display: grid; grid-template-columns: minmax(72px, 1fr) minmax(76px, 0.72fr) auto; align-items: center; gap: 6px; }}
+.numeric-unit {{ color: #aeb7c3; font-size: 12px; min-width: 14px; }}
+.numeric-control input:invalid {{ border-color: #d76055; }}
 button {{ cursor: pointer; background: #2d5f8b; border-color: #3976aa; font-weight: 600; }}
 .row {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }}
 #status {{ padding: 10px; border-radius: 7px; background: #171a1f; white-space: pre-wrap; font: 12px/1.45 ui-monospace, monospace; }}
@@ -181,21 +185,21 @@ button {{ cursor: pointer; background: #2d5f8b; border-color: #3976aa; font-weig
     <h1>Decanting case playback</h1>
     <p id="cacheSummary" class="verified">검증 결과를 불러오는 중…</p>
     <fieldset><legend>Robot base</legend>
-      <label>UR20 X <select data-key="ur_x"></select></label>
-      <label>UR20 Y <select data-key="ur_y"></select></label>
-      <label>UR20 Z <select data-key="ur_z"></select></label>
-      <label>UR20 yaw <select data-key="ur_yaw"></select></label>
-      <label>SR-12iA X <select data-key="sr_x"></select></label>
-      <label>SR-12iA Y <select data-key="sr_y"></select></label>
-      <label>SR-12iA Z <select data-key="sr_z"></select></label>
-      <label>SR-12iA yaw <select data-key="sr_yaw"></select></label>
+      <label>UR20 X <span class="numeric-control"><input type="range" data-slider-key="ur_x" aria-label="UR20 X slider"><input type="number" step="any" data-input-key="ur_x" aria-label="UR20 X input"><span class="numeric-unit">m</span></span></label>
+      <label>UR20 Y <span class="numeric-control"><input type="range" data-slider-key="ur_y" aria-label="UR20 Y slider"><input type="number" step="any" data-input-key="ur_y" aria-label="UR20 Y input"><span class="numeric-unit">m</span></span></label>
+      <label>UR20 Z <span class="numeric-control"><input type="range" data-slider-key="ur_z" aria-label="UR20 Z slider"><input type="number" step="any" data-input-key="ur_z" aria-label="UR20 Z input"><span class="numeric-unit">m</span></span></label>
+      <label>UR20 yaw <span class="numeric-control"><input type="range" data-slider-key="ur_yaw" aria-label="UR20 yaw slider"><input type="number" step="any" data-input-key="ur_yaw" aria-label="UR20 yaw input"><span class="numeric-unit">°</span></span></label>
+      <label>SR-12iA X <span class="numeric-control"><input type="range" data-slider-key="sr_x" aria-label="SR-12iA X slider"><input type="number" step="any" data-input-key="sr_x" aria-label="SR-12iA X input"><span class="numeric-unit">m</span></span></label>
+      <label>SR-12iA Y <span class="numeric-control"><input type="range" data-slider-key="sr_y" aria-label="SR-12iA Y slider"><input type="number" step="any" data-input-key="sr_y" aria-label="SR-12iA Y input"><span class="numeric-unit">m</span></span></label>
+      <label>SR-12iA Z <span class="numeric-control"><input type="range" data-slider-key="sr_z" aria-label="SR-12iA Z slider"><input type="number" step="any" data-input-key="sr_z" aria-label="SR-12iA Z input"><span class="numeric-unit">m</span></span></label>
+      <label>SR-12iA yaw <span class="numeric-control"><input type="range" data-slider-key="sr_yaw" aria-label="SR-12iA yaw slider"><input type="number" step="any" data-input-key="sr_yaw" aria-label="SR-12iA yaw input"><span class="numeric-unit">°</span></span></label>
     </fieldset>
     <fieldset><legend>Process case</legend>
       <label>SKU <select data-key="sku"></select></label>
-      <label>Lift height <select data-key="lift"></select></label>
-      <label>Tote offset <select data-key="tote"></select></label>
-      <label>SR J3 stroke <select data-key="stroke"></select></label>
-      <label>Clearance <select data-key="clearance"></select></label>
+      <label>Lift height <span class="numeric-control"><input type="range" data-slider-key="lift" aria-label="Lift height slider"><input type="number" step="any" data-input-key="lift" aria-label="Lift height input"><span class="numeric-unit">m</span></span></label>
+      <label>Tote offset <span class="numeric-control"><input type="range" data-slider-key="tote" aria-label="Tote offset slider"><input type="number" step="any" data-input-key="tote" aria-label="Tote offset input"><span class="numeric-unit">m</span></span></label>
+      <label>SR J3 stroke <span class="numeric-control"><input type="range" data-slider-key="stroke" aria-label="SR J3 stroke slider"><input type="number" step="any" data-input-key="stroke" aria-label="SR J3 stroke input"><span class="numeric-unit">m</span></span></label>
+      <label>Clearance <span class="numeric-control"><input type="range" data-slider-key="clearance" aria-label="Clearance slider"><input type="number" step="any" data-input-key="clearance" aria-label="Clearance input"><span class="numeric-unit">m</span></span></label>
       <label>Corner <select data-key="corner"></select></label>
       <label>Coordination <select data-key="mode"></select></label>
     </fieldset>
@@ -207,15 +211,19 @@ button {{ cursor: pointer; background: #2d5f8b; border-color: #3976aa; font-weig
       <label><span>Ellipsoid</span><input id="showEllipsoid" type="checkbox" checked></label>
       <div class="row"><button id="previous" type="button">Previous step</button><button id="next" type="button">Next step</button></div>
     </fieldset>
-    <p class="muted">표시 값은 cache의 정확한 조합입니다. 선택 시 IK를 다시 계산하지 않습니다.</p>
+    <p class="muted">슬라이더와 직접 입력은 cache에 미리 계산된 정확한 값만 선택합니다. 없는 값은 case grid에 추가한 뒤 precompute해야 합니다.</p>
     <output id="status" aria-live="polite">Loading cache…</output>
   </section>
   <iframe id="meshcat" src="{escaped_url}" title="MeshCat robot view"></iframe>
 </main>
 <script>
 "use strict";
-const parameterKeys = ["ur_x","ur_y","ur_z","ur_yaw","sr_x","sr_y","sr_z","sr_yaw","sku","lift","tote","stroke","clearance","corner","mode"];
-const selects = Object.fromEntries(parameterKeys.map(k => [k, document.querySelector(`[data-key="${{k}}"]`)]));
+const numericKeys = ["ur_x","ur_y","ur_z","ur_yaw","sr_x","sr_y","sr_z","sr_yaw","lift","tote","stroke","clearance"];
+const categoricalKeys = ["sku","corner","mode"];
+const parameterKeys = [...numericKeys.slice(0,8),"sku",...numericKeys.slice(8),"corner","mode"];
+const selects = Object.fromEntries(categoricalKeys.map(k => [k, document.querySelector(`[data-key="${{k}}"]`)]));
+const sliders = Object.fromEntries(numericKeys.map(k => [k, document.querySelector(`[data-slider-key="${{k}}"]`)]));
+const numberInputs = Object.fromEntries(numericKeys.map(k => [k, document.querySelector(`[data-input-key="${{k}}"]`)]));
 const stepSelect = document.getElementById("step");
 const checkSelect = document.getElementById("check");
 const sampleSelect = document.getElementById("sample");
@@ -235,21 +243,46 @@ function optionLabel(key, value) {{
   if (["ur_yaw","sr_yaw"].includes(key)) return textValue(value, "°");
   return String(value);
 }}
+function availableValues(key) {{
+  const values = [...new Map(catalog.cases.map(c => {{ const v=flattenKey(c)[key]; return [JSON.stringify(v),v]; }})).values()];
+  return numericKeys.includes(key) ? values.sort((a,b) => (a ?? -Infinity) - (b ?? -Infinity)) : values;
+}}
 function syncParameterControls(item) {{
   const values = flattenKey(item);
-  for (const key of parameterKeys) {{
-    const all = [...new Map(catalog.cases.map(c => {{ const v=flattenKey(c)[key]; return [JSON.stringify(v),v]; }})).values()];
+  for (const key of categoricalKeys) {{
+    const all = availableValues(key);
     const select = selects[key]; select.replaceChildren();
     for (const value of all) {{ const option=document.createElement("option"); option.value=JSON.stringify(value); option.textContent=optionLabel(key,value); select.append(option); }}
     select.value=JSON.stringify(values[key]);
   }}
+  for (const key of numericKeys) {{
+    const all = availableValues(key);
+    const slider = sliders[key], input = numberInputs[key];
+    const index = all.findIndex(value => Object.is(value, values[key]));
+    slider.min="0"; slider.max=String(Math.max(0,all.length-1)); slider.step="1"; slider.value=String(Math.max(0,index)); slider.disabled=all.length < 2;
+    input.value=values[key] === null ? "" : String(values[key]);
+    input.placeholder=values[key] === null ? "default" : "";
+    input.title=`Precomputed values: ${{all.map(value => textValue(value)).join(", ")}}`;
+    input.setCustomValidity("");
+  }}
 }}
-function chooseByParameter(changedKey) {{
-  const wanted = JSON.parse(selects[changedKey].value);
+function chooseByParameter(changedKey, wanted) {{
   const current = flattenKey(activeCase);
   let candidates = catalog.cases.filter(c => Object.is(flattenKey(c)[changedKey], wanted));
   candidates.sort((a,b) => parameterKeys.reduce((score,key) => score + (Object.is(flattenKey(a)[key], current[key]) ? -1 : 0), 0) - parameterKeys.reduce((score,key) => score + (Object.is(flattenKey(b)[key], current[key]) ? -1 : 0), 0));
   if (candidates.length) {{ activeCase=candidates[0]; syncParameterControls(activeCase); populateSteps(); submitSelection(); }}
+}}
+function chooseNumericValue(key, wanted) {{
+  const input=numberInputs[key], all=availableValues(key);
+  const exact=wanted === null ? all.find(value => value === null) : all.find(value => value !== null && Math.abs(value-wanted) <= 1e-9*Math.max(1,Math.abs(value),Math.abs(wanted)));
+  if ((wanted !== null && !Number.isFinite(wanted)) || exact === undefined) {{
+    const choices=all.map(value => textValue(value)).join(", ");
+    const message=`${{key}}=${{input.value || "(empty)"}} is not precomputed. Available: ${{choices}}`;
+    input.setCustomValidity(message); input.reportValidity();
+    statusNode.dataset.level="failed"; statusNode.textContent=message;
+    return;
+  }}
+  input.setCustomValidity(""); chooseByParameter(key,exact);
 }}
 function populateSteps() {{
   stepSelect.replaceChildren();
@@ -280,7 +313,11 @@ async function submitSelection() {{
     statusNode.dataset.level=result.step_status || "skipped"; statusNode.textContent=result.status_text || JSON.stringify(result,null,2);
   }} catch(error) {{ if(serial!==requestSerial)return; statusNode.dataset.level="failed"; statusNode.textContent=`UI error: ${{error.message}}`; }}
 }}
-for (const key of parameterKeys) selects[key].addEventListener("change",()=>chooseByParameter(key));
+for (const key of categoricalKeys) selects[key].addEventListener("change",()=>chooseByParameter(key,JSON.parse(selects[key].value)));
+for (const key of numericKeys) {{
+  sliders[key].addEventListener("input",()=>{{ const all=availableValues(key); chooseByParameter(key,all[Number(sliders[key].value)]); }});
+  numberInputs[key].addEventListener("change",()=>{{ const raw=numberInputs[key].value.trim(); chooseNumericValue(key,raw === "" ? null : Number(raw)); }});
+}}
 stepSelect.addEventListener("change",()=>{{populateChecks();submitSelection();}});
 checkSelect.addEventListener("change",()=>{{populateSamples();submitSelection();}});
 sampleSelect.addEventListener("change",submitSelection);

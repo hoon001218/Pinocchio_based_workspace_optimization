@@ -42,8 +42,12 @@ def test_page_contains_parameter_step_and_meshcat_controls():
     page = build_control_page("http://127.0.0.1:7000/static/")
 
     assert '<iframe id="meshcat" src="http://127.0.0.1:7000/static/"' in page
-    assert 'data-key="ur_x"' in page
-    assert 'data-key="sr_z"' in page
+    assert 'data-slider-key="ur_x"' in page
+    assert 'data-input-key="ur_x"' in page
+    assert 'data-slider-key="sr_z"' in page
+    assert 'data-input-key="sr_z"' in page
+    assert 'data-slider-key="lift"' in page
+    assert 'data-input-key="lift"' in page
     assert 'data-key="sku"' in page
     assert 'id="step"' in page
     assert 'id="ellipsoidScale"' in page
@@ -52,6 +56,7 @@ def test_page_contains_parameter_step_and_meshcat_controls():
     assert 'fetch("/api/catalog")' in page
     assert 'fetch("/api/select"' in page
     assert "checkSelect.value=String(step.checks.length-1)" in page
+    assert "is not precomputed" in page
 
 
 @pytest.mark.parametrize("url", ("file:///tmp/a", "not-a-url", "ftp://localhost/x"))
