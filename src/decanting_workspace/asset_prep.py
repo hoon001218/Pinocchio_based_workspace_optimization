@@ -1,9 +1,10 @@
-"""Prepare the locally supplied Isaac Sim SR-12iA meshes for Pinocchio.
+"""Prepare an authorized Isaac Sim SR-12iA mesh bundle for Pinocchio.
 
-This module intentionally has no download path.  The caller must supply a
-``payloads/geometries.usd`` file that they are entitled to use.  OpenUSD is an
-optional, one-time conversion dependency; importing this module does not import
-``pxr``.
+A caller may either supply a local ``payloads/geometries.usd`` or explicitly
+accept the linked FANUC terms before downloading the pinned NVIDIA asset.  The
+download is content-addressed and rejected unless its SHA-256 matches.  OpenUSD
+is an optional, one-time conversion dependency; importing this module does not
+import ``pxr``.
 """
 
 from __future__ import annotations
@@ -18,14 +19,20 @@ from pathlib import Path
 import shutil
 import tempfile
 from typing import Sequence
+from urllib.request import urlopen
 import xml.etree.ElementTree as ET
+
+from .paths import repository_path
 
 
 ISAAC_SIM_VERSION = "6.0"
-CONVERTER_SCHEMA_VERSION = 2
+CONVERTER_SCHEMA_VERSION = 3
 NVIDIA_SR12IA_GEOMETRIES_URL = (
     "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/"
     "Isaac/6.0/Isaac/Robots/Fanuc/sr12ia/payloads/geometries.usd"
+)
+NVIDIA_SR12IA_GEOMETRIES_SHA256 = (
+    "1313afdb54a8c369a37e910c63007c6295cecd3d804226580fbef85c42e09740"
 )
 FANUC_3D_CONTENT_SHARING_AGREEMENT_URL = (
     "https://docs.isaacsim.omniverse.nvidia.com/6.0.0/_downloads/"
@@ -72,13 +79,8 @@ class _ObjMesh:
 def default_sr12ia_output_urdf() -> Path:
     """Return the repository-local, ignored cache path for the generated URDF."""
 
-    repository_root = Path(__file__).resolve().parents[2]
-    return (
-        repository_root
-        / ".cache"
-        / "robot_assets"
-        / "sr12ia"
-        / _URDF_FILENAME
+    return repository_path(
+        ".cache", "robot_assets", "sr12ia", _URDF_FILENAME
     )
 
 
@@ -110,12 +112,124 @@ def validate_prepared_sr12ia_asset(
         raise ValueError("prepared SR-12iA cache has an invalid J3 stroke") from exc
     if j3_stroke_m != 0.3:
         raise ValueError("prepared SR-12iA cache has an unsupported J3 stroke")
-    missing = [
-        spec.filename for spec in _MESH_EXPORTS if not (urdf.parent / spec.filename).is_file()
-    ]
+    _validate_bundled_mesh_references(urdf)
+    return provenance
+
+
+def _validate_bundled_mesh_references(urdf: Path) -> None:
+    """Require the generated URDF to reference only its colocated OBJ bundle."""
+
+    try:
+        root = ET.parse(urdf).getroot()
+    except (ET.ParseError, OSError) as exc:
+        raise ValueError(f"invalid prepared SR-12iA URDF: {urdf}") from exc
+
+    mesh_elements = root.findall(".//mesh")
+    expected_names = tuple(spec.filename for spec in _MESH_EXPORTS)
+    if len(mesh_elements) != len(expected_names):
+        raise ValueError(
+            "prepared SR-12iA URDF must contain exactly "
+            f"{len(expected_names)} mesh references"
+        )
+
+    bundle_root = urdf.parent.resolve()
+    referenced_names: list[str] = []
+    missing: list[str] = []
+    for element in mesh_elements:
+        filename = element.get("filename", "").strip()
+        windows_path = Path(filename)
+        # ``Path.is_absolute`` follows the host OS.  These extra checks reject
+        # Windows paths and URI forms even when validation runs on POSIX.
+        is_windows_absolute = (
+            len(filename) >= 3
+            and filename[0].isalpha()
+            and filename[1] == ":"
+            and filename[2] in {"/", "\\"}
+        ) or filename.startswith(("\\\\", "//"))
+        if (
+            not filename
+            or "://" in filename
+            or ":" in filename
+            or "\\" in filename
+            or windows_path.is_absolute()
+            or is_windows_absolute
+        ):
+            raise ValueError(
+                "prepared SR-12iA mesh references must be portable relative "
+                f"paths: {filename!r}"
+            )
+
+        target = (bundle_root / windows_path).resolve()
+        try:
+            target.relative_to(bundle_root)
+        except ValueError as exc:
+            raise ValueError(
+                "prepared SR-12iA mesh reference escapes its asset bundle: "
+                f"{filename!r}"
+            ) from exc
+        referenced_names.append(windows_path.name)
+        if not target.is_file():
+            missing.append(filename)
+
+    if sorted(referenced_names) != sorted(expected_names):
+        raise ValueError(
+            "prepared SR-12iA URDF mesh set does not match the converter "
+            f"contract: {sorted(referenced_names)}"
+        )
     if missing:
         raise ValueError(f"prepared SR-12iA cache is missing meshes: {missing}")
-    return provenance
+
+
+def download_sr12ia_geometry(
+    destination: str | os.PathLike[str],
+    *,
+    accept_fanuc_license: bool = False,
+) -> Path:
+    """Download the pinned NVIDIA geometry layer after explicit license consent.
+
+    No bytes are written unless ``accept_fanuc_license`` is true.  The completed
+    file replaces ``destination`` only after its SHA-256 matches the value
+    recorded for the Isaac Sim 6.0 asset.
+    """
+
+    if not accept_fanuc_license:
+        raise ValueError(
+            "direct SR-12iA download requires --accept-fanuc-license after "
+            "reviewing " + FANUC_3D_CONTENT_SHARING_AGREEMENT_URL
+        )
+
+    target = Path(destination).expanduser().resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{target.name}.", suffix=".download", dir=target.parent
+    )
+    temporary = Path(temporary_name)
+    digest = hashlib.sha256()
+    try:
+        with os.fdopen(descriptor, "wb") as stream, urlopen(
+            NVIDIA_SR12IA_GEOMETRIES_URL,
+            timeout=60,
+        ) as response:
+            for chunk in iter(lambda: response.read(1024 * 1024), b""):
+                digest.update(chunk)
+                stream.write(chunk)
+            stream.flush()
+            os.fsync(stream.fileno())
+        actual = digest.hexdigest()
+        if actual != NVIDIA_SR12IA_GEOMETRIES_SHA256:
+            raise ValueError(
+                "downloaded SR-12iA geometry SHA-256 mismatch: "
+                f"expected {NVIDIA_SR12IA_GEOMETRIES_SHA256}, got {actual}"
+            )
+        os.replace(temporary, target)
+        return target
+    except BaseException:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def _local_source_path(input_usd: str | os.PathLike[str]) -> Path:
@@ -371,21 +485,16 @@ def _add_joint(
         )
 
 
-def _urdf_text(mesh_directory: Path | None = None) -> str:
+def _urdf_text() -> str:
     robot = ET.Element("robot", {"name": "fanuc_sr12ia_mesh"})
     dark = ET.SubElement(robot, "material", {"name": "fanuc_dark"})
     ET.SubElement(dark, "color", {"rgba": "0.12 0.13 0.14 1"})
     yellow = ET.SubElement(robot, "material", {"name": "fanuc_yellow"})
     ET.SubElement(yellow, "color", {"rgba": "0.96 0.77 0.05 1"})
     ET.SubElement(robot, "link", {"name": "world"})
-    filenames = {}
-    for spec in _MESH_EXPORTS:
-        filename = (
-            spec.filename
-            if mesh_directory is None
-            else (mesh_directory / spec.filename).as_posix()
-        )
-        filenames[(spec.link, spec.role)] = filename
+    filenames = {
+        (spec.link, spec.role): spec.filename for spec in _MESH_EXPORTS
+    }
     for link_name in ("base_link", "J1_link", "J2_link", "J3_link"):
         _add_mesh_link(
             robot,
@@ -488,6 +597,7 @@ def _provenance_text(source: Path) -> str:
         "source_file": source.name,
         "source_sha256": _sha256(source),
         "nvidia_asset_url": NVIDIA_SR12IA_GEOMETRIES_URL,
+        "nvidia_asset_sha256": NVIDIA_SR12IA_GEOMETRIES_SHA256,
         "isaac_sim_version": ISAAC_SIM_VERSION,
         "j3_stroke_m": 0.3,
         "fanuc_3d_content_sharing_agreement_url": (
@@ -556,10 +666,9 @@ def prepare_sr12ia_assets(
     provenance_text = _provenance_text(source)
     destination.mkdir(parents=True, exist_ok=True)
     io_destination = Path(_windows_short_path(destination))
-    # Pinocchio does not resolve a bare relative mesh name against the URDF's
-    # directory.  Absolute short-path references make the generated URDF
-    # directly loadable without package_dirs, including from this Korean path.
-    urdf_text = _urdf_text(io_destination)
+    # Keep the bundle relocatable.  The production robot loader resolves these
+    # filenames from the URDF directory before handing geometry to Pinocchio.
+    urdf_text = _urdf_text()
     for spec in _MESH_EXPORTS:
         _atomic_write_text(
             io_destination / spec.filename,
@@ -573,13 +682,31 @@ def prepare_sr12ia_assets(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Convert a local Isaac Sim 6.0 FANUC SR-12iA geometries.usd "
-            "into cached OBJ meshes and a four-axis Pinocchio URDF."
+            "Convert a local or explicitly accepted, pinned Isaac Sim 6.0 "
+            "FANUC SR-12iA geometries.usd into cached OBJ meshes and a "
+            "four-axis Pinocchio URDF."
         )
     )
     parser.add_argument(
         "input_usd",
+        nargs="?",
         help="local path to Fanuc/sr12ia/payloads/geometries.usd",
+    )
+    parser.add_argument(
+        "--download",
+        action="store_true",
+        help=(
+            "download the pinned NVIDIA Isaac Sim 6.0 geometry instead of "
+            "using a local input file"
+        ),
+    )
+    parser.add_argument(
+        "--accept-fanuc-license",
+        action="store_true",
+        help=(
+            "confirm that the FANUC 3D Content Sharing Agreement was reviewed; "
+            "required with --download"
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -594,10 +721,28 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the local-only asset converter command line interface."""
+    """Run the explicit local-or-pinned asset converter interface."""
 
-    args = _parser().parse_args(argv)
-    urdf_path = prepare_sr12ia_assets(args.input_usd, args.output_dir)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.download and args.input_usd is not None:
+        parser.error("input_usd and --download are mutually exclusive")
+    if not args.download and args.input_usd is None:
+        parser.error("provide input_usd or select --download")
+    if args.download and not args.accept_fanuc_license:
+        parser.error("--download requires --accept-fanuc-license")
+    if args.accept_fanuc_license and not args.download:
+        parser.error("--accept-fanuc-license is only valid with --download")
+
+    if args.download:
+        with tempfile.TemporaryDirectory(prefix="sr12ia_download_") as directory:
+            source = download_sr12ia_geometry(
+                Path(directory) / "geometries.usd",
+                accept_fanuc_license=args.accept_fanuc_license,
+            )
+            urdf_path = prepare_sr12ia_assets(source, args.output_dir)
+    else:
+        urdf_path = prepare_sr12ia_assets(args.input_usd, args.output_dir)
     print(urdf_path)
     return 0
 

@@ -215,7 +215,7 @@ def test_explicit_visual_sr_does_not_change_evaluation_fingerprint_spec(
     assert render[2]["sr12ia_visual_only"] is True
 
 
-def test_missing_prepared_sr_mesh_falls_back_to_evaluation_visual(
+def test_missing_prepared_sr_mesh_fails_instead_of_changing_models(
     tmp_path,
     capsys,
 ):
@@ -252,8 +252,51 @@ def test_missing_prepared_sr_mesh_falls_back_to_evaluation_visual(
         dependencies=deps,
     )
 
+    assert code == 2
+    assert not any(call[0] == "render" for call in calls)
+    assert "prepared FANUC SR-12iA visual asset is required" in capsys.readouterr().err
+
+
+def test_missing_prepared_sr_mesh_falls_back_only_when_explicitly_allowed(
+    tmp_path,
+    capsys,
+):
+    spec = load_scene_spec()
+    cache = _fake_cache(spec)
+    calls = []
+    viewer = _Viewer(calls)
+    server = _Server(calls)
+    deps = PlaybackDependencies(
+        spec_loader=lambda path: spec,
+        cache_loader=lambda *args, **kwargs: cache,
+        official_ur20_resolver=lambda: (
+            spec.robots["ur20"].urdf_path,
+            (),
+        ),
+        prepared_sr12ia_resolver=lambda: (_ for _ in ()).throw(
+            FileNotFoundError("prepared mesh missing")
+        ),
+        viewer_factory=lambda: viewer,
+        backend_factory=lambda *args, **kwargs: object(),
+        server_factory=lambda *args: server,
+        browser_open=lambda url: None,
+    )
+
+    code = main(
+        [
+            "--cache",
+            str(tmp_path / "cache.json"),
+            "--ur20-source",
+            "primitive",
+            "--allow-sr-visual-fallback",
+            "--port",
+            "0",
+        ],
+        dependencies=deps,
+    )
+
     assert code == 0
     render = next(call for call in calls if call[0] == "render")
     assert render[2]["sr12ia_urdf"] == spec.robots["sr12ia"].urdf_path
     assert render[2]["sr12ia_visual_only"] is False
-    assert "displaying the evaluation model" in capsys.readouterr().err
+    assert "--allow-sr-visual-fallback requested" in capsys.readouterr().err

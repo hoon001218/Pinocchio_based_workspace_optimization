@@ -18283,8 +18283,10 @@
     }
   ],
   "evaluation_settings": {
-    "ur20_urdf": "C:\\Users\\wogns\\OneDrive\\바탕 화면\\github_repo\\Pinocchio_based_workspace_optimization\\.cache\\robot_descriptions\\xacrodoc\\ur20_description\\ur20_description-ffa140e108c7b3ff.urdf",
-    "sr12ia_urdf": "C:\\Users\\wogns\\OneDrive\\바탕 화면\\github_repo\\Pinocchio_based_workspace_optimization\\assets\\robots\\sr12ia\\sr12ia_approx.urdf",
+    "ur20_urdf": "assets/robots/ur20/official/ur20.urdf",
+    "ur20_urdf_sha256": "5a9d343a7e730034c8f6bce3d45e6bca6875eb5b7083ba78529edad067cdb81e",
+    "sr12ia_urdf": "assets/robots/sr12ia/sr12ia_approx.urdf",
+    "sr12ia_urdf_sha256": "f53e09a61382149fb6b6fdd6437fc851057aaf42fe6a76d85bda74f7b8b255c8",
     "approach_distance_m": 0.15,
     "cartesian_translation_step_m": 0.05,
     "cartesian_rotation_step_rad": 0.08726646259971647,

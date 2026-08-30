@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "robot": "ur20",
+  "upstream_repository": "https://github.com/UniversalRobots/Universal_Robots_ROS2_Description.git",
+  "upstream_commit": "ae333289875f9ba5a9ea6649a54036efb5ccabee",
+  "upstream_release": "4.3.1",
+  "xacro_args": {
+    "name": "ur20",
+    "ur_type": "ur20"
+  },
+  "source_flattened_urdf_sha256_before_path_rewrite": "b65bba3d038a0718fc3c5af05648615f5e413e6c08cb852a650bac42aebf9d09",
+  "portable_rewrite": "Only the 14 generated absolute mesh filenames were rewritten to paths relative to this URDF.",
+  "licenses": {
+    "description_source": "LICENSE-BSD-3-Clause.txt",
+    "graphical_documentation": "LICENSE-UR-GRAPHICAL-DOCUMENTATION.txt"
+  },
+  "files_sha256": {
+    "LICENSE-BSD-3-Clause.txt": "fa00c85d2f7f57d98e622cfcaaab1bfe6bfb4261239d03007fc561cea87894d7",
+    "LICENSE-UR-GRAPHICAL-DOCUMENTATION.txt": "103d1ff2a2183ccdb7c3ebfc74adb49d734321b7dc5c66c18cae3452b8e98046",
+    "meshes/collision/base.stl": "455a01c50280f986471a86fefe1b2b3e86f7f1afd9fb32493a4febc42d0388f0",
+    "meshes/collision/forearm.stl": "4bd860969e56358c6aed65be1268b13a83535541aacac746323dcff217d3a815",
+    "meshes/collision/shoulder.stl": "f20bd5197388f050d5cf752ff980b4a117b8559d4dc5b0ba95a52f9c3e76d182",
+    "meshes/collision/upperarm.stl": "0093cb733ea040e9ec715b9b4a5add42961ab99efab752abd0c0b1e933a578fa",
+    "meshes/collision/wrist1.stl": "19bc042d09f58aa2a0646dead171955f4d6f3518ef9b4c5a99ba6b565536532e",
+    "meshes/collision/wrist2.stl": "0a2972fb64f334297bc8bdd42e343f572f109bdbfd867a93785763d9b4095740",
+    "meshes/collision/wrist3.stl": "d985f80bc6ab8d6979e9e9267c1ac2442a804d9905022b1fd77eb1dbb7de93f4",
+    "meshes/visual/UR20_DIFF_8bit_2K.png": "9c659b5115540ac6f0af94d504e04ca734afaa304dc0c1e8392741c20ca055ea",
+    "meshes/visual/base.dae": "3a20bcddd2848bdfbc567e6adc89e21d7c72d247f56ee6390a2db1df66744381",
+    "meshes/visual/forearm.dae": "470cd151dd1953b91067f8482c2da9ffa0896d30eb68837dfccf8298e1c99eec",
+    "meshes/visual/shoulder.dae": "723d685aed8c41f5b287784f89465af74bf28d2b872dc15e6cc1be1fab6087f9",
+    "meshes/visual/upperarm.dae": "d6fe6a0f684ec06233580fbd23aeedcb568b470fdea75057037b1ff8469aac5a",
+    "meshes/visual/wrist1.dae": "e6a7b3740bb33532481cf1225f9e98708b661ba143b019e94c76d590412933a9",
+    "meshes/visual/wrist2.dae": "1c3618fc277e5d53f29a3a21c589f7aefdbe87d4f57fa34a44394974dc45a2e6",
+    "meshes/visual/wrist3.dae": "29b44f326bab6219c25f910cb6310bee9139ecd4a4634654a9831a289f03caf2",
+    "ur20.urdf": "5a9d343a7e730034c8f6bce3d45e6bca6875eb5b7083ba78529edad067cdb81e"
+  }
+}

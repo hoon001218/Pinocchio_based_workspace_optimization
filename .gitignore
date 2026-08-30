@@ -46,7 +46,10 @@ htmlcov/
 .nox/
 .coverage
 .coverage.*
-.cache
+# Repository-local generated assets and dependency caches.  Keep the tracked
+# contract README visible while excluding licensed/generated payloads.
+.cache/*
+!.cache/README.md
 nosetests.xml
 coverage.xml
 *.cover

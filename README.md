@@ -2,6 +2,11 @@
 
 Python-only scene, task, and robot-model foundation for the decanting-cell base-placement study. The runtime is independent of Isaac Sim and ROS/MoveIt: one validated `SceneSnapshot` feeds Pinocchio FK/IK/Jacobians, Coal collision checks, conservative SR task-workspace screening, and the reusable base-candidate evaluator.
 
+For continuation work, read [the code architecture](docs/ARCHITECTURE.md) and
+[the project handoff](docs/HANDOFF.md). The handoff records confirmed process
+requirements, current results, unresolved decisions, and the fresh-machine
+checklist.
+
 Implemented in this stage:
 
 - fixed conveyor, worktable, and camera-support proxies extracted from `cu_usd_simplified.usd`;
@@ -37,56 +42,106 @@ Implemented in this stage:
 - a local parameter/step control panel around live Meshcat, with no IK work in
   the browser or during pose replay.
 
-## Environment
+## Fresh-machine setup
 
-Pixi is not used. Create or update the single Conda prefix environment and install the package in editable mode:
+Pixi is not used. Clone the repository at any filesystem location. BGF is
+reference material rather than a runtime dependency; initialize only its root
+submodule because the current BGF revision contains an incomplete nested
+submodule declaration:
 
-```powershell
-conda env create --prefix .\.venv --file environment.yml
-conda activate .\.venv
+```text
+git clone REPOSITORY_URL
+cd Pinocchio_based_workspace_optimization
+git submodule update --init BGF
+```
+
+Create the single Conda prefix environment and install this checkout in
+editable mode:
+
+```text
+conda env create --prefix ./.venv --file environment.yml
+conda activate ./.venv
 python -m pip install -e . --no-deps --no-build-isolation
 ```
 
-On this computer, Miniconda is installed at `C:\Users\wogns\miniconda3`, but the PowerShell session used by Codex does not have the Conda shell hook on `PATH`. In addition, Conda reads the Korean workspace path correctly only in UTF-8 mode. The activation-free equivalent is therefore:
+Prepare the licensed SR mesh and validate both portable robot bundles, the
+scene, the tracked reports, and both tracked result caches:
 
-```powershell
-$env:PYTHONUTF8 = "1"
-& "$env:USERPROFILE\miniconda3\Scripts\conda.exe" run --prefix .\.venv `
-  python -m pytest
+```text
+decanting-setup --accept-fanuc-license
+python -m pytest
 ```
 
-Running `.\.venv\python.exe` directly does not activate `.venv\Library\bin`; dynamically loaded NumPy/BLAS DLLs can then fail. Use `conda activate` or `conda run` for tests and visualization.
+The acceptance flag is intentional: it downloads the pinned source directly
+from NVIDIA, verifies SHA-256, converts it locally, and never commits FANUC
+geometry. If an authorized `geometries.usd` is already available, use
+`decanting-setup --sr12ia-usd path/to/geometries.usd` instead. Re-running
+`decanting-setup` without either option only validates an existing bundle.
+
+Without shell activation, use `conda run --prefix ./.venv COMMAND`. On Windows,
+do not invoke `.venv/python.exe` directly because Conda's DLL paths would not
+be activated. Set `PYTHONUTF8=1` when working from a non-ASCII checkout path.
+All repository-owned paths are resolved through the installed module rather
+than a username, drive, or checkout folder name. If Python is installed
+non-editably, set `DECANTING_WORKSPACE_ROOT` to the complete cloned repository
+before running the commands.
 
 ## Robot assets
 
 ### UR20
 
-`--ur20-source official` is the default. It resolves the Universal Robots ROS 2 description release 4.3.1 at immutable commit `ae333289875f9ba5a9ea6649a54036efb5ccabee`, including DAE visual meshes and STL collision meshes. The checkout and generated URDF are cached by `robot_descriptions`; the repository does not copy the graphical files.
+`--ur20-source official` is the default. A portable bundle of the Universal
+Robots ROS 2 description release 4.3.1 at immutable commit
+`ae333289875f9ba5a9ea6649a54036efb5ccabee` is stored under
+`assets/robots/ur20/official`. It contains the relative-path URDF, DAE visual
+meshes, STL collision meshes, both applicable license texts, and a SHA-256
+provenance manifest. The default resolver validates every file and works
+offline; it no longer generates a machine-specific URDF under `.cache`.
 
 For a deterministic mesh-free fallback, use `--ur20-source primitive`. An explicit model always takes precedence:
 
-```powershell
-python -m decanting_workspace --ur20-urdf C:\models\ur20.urdf --open
+```text
+python -m decanting_workspace --ur20-urdf path/to/ur20.urdf --open
 ```
 
 The suction tool dimensions are provisional and live in `config/cell_nominal.yaml`. With the official UR20 they are attached to `tool0` both as a viewer primitive and as two collision geometries. Loading with `suction_proxy=...` also creates a `suction_tcp` operational frame at the configured contact plane; use that frame, not the bare flange `tool0`, for IK and Jacobians.
 
 ### FANUC SR-12iA
 
-FANUC provides product outline CAD to registered MyFANUC users. Isaac Sim 6.0 also contains a link-separated FANUC SR-12iA asset at `Isaac/Robots/Fanuc/sr12ia/sr12ia.usd`. The local converter consumes that asset's `payloads/geometries.usd`; it never downloads a file:
+FANUC provides product outline CAD to registered MyFANUC users. Isaac Sim 6.0
+also contains a link-separated FANUC SR-12iA asset at
+`Isaac/Robots/Fanuc/sr12ia/sr12ia.usd`. Either convert an authorized local
+source:
 
-```powershell
-python -m decanting_workspace.asset_prep `
-  C:\path\to\Fanuc\sr12ia\payloads\geometries.usd
+```text
+decanting-assets path/to/Fanuc/sr12ia/payloads/geometries.usd
 ```
 
-It writes eight OBJ files, a four-axis URDF, and a provenance manifest to the ignored directory `.cache/robot_assets/sr12ia`. The supplied Isaac asset is the standard 300 mm J3 model, so its generated URDF is limited to `0...0.300 m`. The viewer's default `--sr12ia-source auto` uses it only for the 300 mm scenario. A 450 mm scenario automatically uses the corrected provisional fallback; `--sr12ia-source mesh` rejects that mismatch. Use `--sr12ia-source approximate` to force the fallback, or `--sr12ia-urdf PATH` for a matching manufacturer model.
+or explicitly accept the linked terms and download the pinned NVIDIA source:
+
+```text
+decanting-assets --download --accept-fanuc-license
+```
+
+Both paths write eight OBJ files, a relative-path four-axis URDF, and a
+provenance manifest to the ignored directory `.cache/robot_assets/sr12ia`.
+The pinned input digest lives in
+`assets/robots/sr12ia/download_manifest.json`. The bundle can be moved with
+the checkout and is revalidated before use. The supplied Isaac asset is the
+standard 300 mm J3 model, so its generated URDF is limited to `0...0.300 m`.
+The scene viewer uses it only for the 300 mm scenario; 450 mm still requires
+the corrected provisional model or an explicit matching manufacturer model.
 
 The fallback follows the real 2R-P-R skeleton: `L1 = L2 = 0.450 m`, the arm plane is `0.336 m` above the base, J3 moves downward through `0...0.450 m`, and J4/tool0 has no artificial translational offset. At zero joint position, `tool0 = [0.900, 0, 0.336] m`. Its shaft uses the longer 450 mm-option height for both choices, conservatively over-approximating the 300 mm fallback until the corresponding manufacturer asset is available. No process tool or provisional cutter is attached to the current SR model.
 
 The default SR guide is deliberately **not** the arm's full `0.9 m` mechanical reach or a swept-link cylinder. It is the permitted XY target region for `tool0`: the oriented top footprint of the SR support cube, inset only by the selected `--clearance-mm`. Candidate evaluation places the real SKU on `UncasingLoadFrame`, checks its four top corners against this footprint, verifies a joint-limit-valid planar 2R branch, and checks cutting Z against the selected J3 range. No cutter offset is assumed. During simultaneous UR work, a separate OBB encloses both this configured task region and the SR collision geometry at its designated cutting posture; sequential mode omits that dynamic OBB while retaining the fixed pedestal and camera supports. An exact SR cutting path and final tool collision model remain later inputs.
 
-The Universal Robots graphical documentation and FANUC/Isaac assets have separate licenses. In particular, the FANUC 3D Content Sharing Agreement restricts standalone redistribution, so derived SR mesh files stay under `.cache` and are not committed. Review the applicable terms before sharing generated assets.
+The Universal Robots graphical documentation and FANUC/Isaac assets have
+separate licenses. The UR terms are distributed with the vendored bundle as
+required. The FANUC 3D Content Sharing Agreement restricts standalone
+redistribution, so derived SR mesh files stay under `.cache` and are not
+committed. A clone is made complete through the explicit setup step rather
+than by copying licensed geometry into Git.
 
 Sources: [Universal Robots description](https://github.com/UniversalRobots/Universal_Robots_ROS2_Description), [FANUC SR-12iA specifications](https://www.fanucamerica.com/products/robot/sr-12ia), [FANUC CAD download information](https://www.fanuc.co.jp/ja/product/outlinedata.html), [Isaac Sim robot asset catalog](https://docs.isaacsim.omniverse.nvidia.com/6.0.0/assets/usd_assets_robots.html), and [FANUC 3D Content Sharing Agreement](https://docs.isaacsim.omniverse.nvidia.com/6.0.0/_downloads/8ea27bd6ad258f4242d675e67e8f7b58/3D%20Content%20Sharing%20Agreement_FANUC.pdf).
 
@@ -297,16 +352,21 @@ directions and singular values. A failed IK sample shows its best diagnostic
 configuration with a red target frame but hides the ellipsoid. Step 6 retains
 the previous successful posture and is labelled as having no pose check.
 
-Robot visual models are loaded only once. The default live UI uses the pinned
-official UR20 mesh without embedding it in an exported HTML file. Playback
-also auto-loads the locally prepared FANUC/Isaac SR-12iA mesh from
+Robot visual models are loaded only once. The default live UI uses the pinned,
+repository-owned official UR20 mesh without embedding it in an exported HTML
+file. Playback also loads the locally prepared FANUC/Isaac SR-12iA mesh from
 `.cache/robot_assets/sr12ia/sr12ia_mesh.urdf`; this display-only choice does
 not replace the SR collision/kinematic model recorded in the cache. Use
 `--sr12ia-visual-urdf PATH` to override only the displayed SR model, and use
 `--sr12ia-urdf PATH` when the evaluation/fingerprint model itself must change.
+If the prepared mesh is missing or stale, playback now fails with the setup
+command instead of silently showing another robot. The approximate visual can
+only be selected intentionally with `--allow-sr-visual-fallback`.
 Cache loading verifies the scene, workflow contract, and actual evaluation
-URDF fingerprints, so results from a different task or model are rejected
-instead of silently replayed. The prepared Isaac mesh is the 300 mm J3 option;
+URDF fingerprints. Robot fingerprints replace local geometry paths with the
+referenced file content hashes, so identical checkouts at different absolute
+paths validate the same cache while changed geometry is rejected. The
+prepared Isaac mesh is the 300 mm J3 option;
 it may visualize a 450 mm study only while the cached displayed J3 posture is
 within 300 mm. Feasibility remains explicitly tied to the 450 mm evaluation
 model in that case.

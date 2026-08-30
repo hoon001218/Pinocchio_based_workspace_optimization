@@ -57,3 +57,7 @@ def test_invalid_candidate_writes_compact_json_without_running_ik(tmp_path):
     assert report["evaluation_settings"]["ur20_urdf"].endswith(
         "ur20_primitive.urdf"
     )
+    assert not report["evaluation_settings"]["ur20_urdf"].startswith(("/", "C:"))
+    assert len(report["evaluation_settings"]["ur20_urdf_sha256"]) == 64
+    assert not report["evaluation_settings"]["sr12ia_urdf"].startswith(("/", "C:"))
+    assert len(report["evaluation_settings"]["sr12ia_urdf_sha256"]) == 64

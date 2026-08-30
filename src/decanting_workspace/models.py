@@ -10,6 +10,8 @@ from typing import Any, Mapping, Sequence
 
 import yaml
 
+from .paths import repository_path
+
 
 Vec2 = tuple[float, float]
 Vec3 = tuple[float, float, float]
@@ -174,7 +176,7 @@ class SceneState:
 def default_config_path() -> Path:
     """Locate the repository-owned nominal scene configuration."""
 
-    return Path(__file__).resolve().parents[2] / "config" / "cell_nominal.yaml"
+    return repository_path("config", "cell_nominal.yaml")
 
 
 def load_scene_spec(path: str | Path | None = None) -> SceneSpec:

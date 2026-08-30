@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shutil
 import sys
 from types import ModuleType
+import xml.etree.ElementTree as ET
 
 import numpy as np
 import pytest
@@ -16,8 +18,10 @@ from decanting_workspace.robots import (
     attach_cutter_proxy,
     attach_suction_proxy,
     configure_sr_j3_stroke,
+    default_vendored_ur20_root,
     load_robot_bundle,
     resolve_official_ur20,
+    validate_vendored_ur20_asset,
 )
 
 
@@ -142,6 +146,46 @@ def test_display_only_sr_requires_the_same_joint_and_tool0_contract() -> None:
     _validate_sr_display_contract(evaluation, compatible_visual)
     with pytest.raises(ValueError, match="joint contract differs"):
         _validate_sr_display_contract(evaluation, incompatible_visual)
+
+
+def test_default_official_resolver_uses_portable_vendored_bundle() -> None:
+    urdf_path, package_dirs = resolve_official_ur20()
+    asset_root = default_vendored_ur20_root().resolve()
+
+    assert urdf_path == asset_root / "ur20.urdf"
+    assert package_dirs == (asset_root,)
+    assert validate_vendored_ur20_asset() == urdf_path
+
+    root = ET.parse(urdf_path).getroot()
+    mesh_filenames = {
+        element.attrib["filename"] for element in root.findall(".//mesh")
+    }
+    assert len(mesh_filenames) == 14
+    assert all("://" not in filename for filename in mesh_filenames)
+    assert all(not Path(filename).is_absolute() for filename in mesh_filenames)
+    assert all((asset_root / filename).is_file() for filename in mesh_filenames)
+
+    bundle = load_robot_bundle(
+        "ur20",
+        urdf_path,
+        package_dirs=package_dirs,
+        load_visual=True,
+    )
+    assert bundle.model.nq == 13
+    assert bundle.collision_model.ngeoms == 7
+    assert bundle.visual_model is not None
+    assert bundle.visual_model.ngeoms == 7
+
+
+def test_vendored_official_resolver_rejects_asset_tampering(tmp_path: Path) -> None:
+    copied_root = tmp_path / "official"
+    shutil.copytree(default_vendored_ur20_root(), copied_root)
+    (copied_root / "LICENSE-BSD-3-Clause.txt").write_text(
+        "tampered\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="hash mismatch"):
+        validate_vendored_ur20_asset(copied_root)
 
 
 def test_official_resolver_pins_commit_and_scopes_cache(

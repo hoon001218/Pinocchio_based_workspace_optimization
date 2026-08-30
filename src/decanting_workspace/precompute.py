@@ -21,6 +21,8 @@ import json
 import math
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, Mapping, Sequence
+from urllib.parse import unquote
+from xml.etree import ElementTree
 
 import numpy as np
 
@@ -636,7 +638,7 @@ def scene_spec_fingerprint(spec: SceneSpec) -> str:
     payload = _json_compatible(payload)
     robot_assets: dict[str, str] = {}
     for name, robot in sorted(spec.robots.items()):
-        robot_assets[name] = hashlib.sha256(robot.urdf_path.read_bytes()).hexdigest()
+        robot_assets[name] = robot_model_fingerprint(robot.urdf_path)
     canonical = json.dumps(
         {
             "scene": payload,
@@ -649,6 +651,62 @@ def scene_spec_fingerprint(spec: SceneSpec) -> str:
         allow_nan=False,
     ).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
+
+
+def robot_model_fingerprint(urdf_path: str | Path) -> str:
+    """Hash a URDF and its local geometry without hashing host path strings.
+
+    Flattened Xacro output commonly embeds ``file://`` paths.  Hashing those
+    bytes directly makes an otherwise identical model differ by checkout
+    directory.  Each resolvable mesh/texture URI is therefore replaced by its
+    content digest before the XML is hashed.  Relative references are resolved
+    against the URDF directory, which is also how :func:`load_robot_bundle`
+    interprets the repository-owned robot bundles.
+    """
+
+    source = Path(urdf_path).resolve()
+    if not source.is_file():
+        raise FileNotFoundError(f"robot URDF not found: {source}")
+    try:
+        root = ElementTree.fromstring(source.read_text(encoding="utf-8"))
+    except ElementTree.ParseError as exc:
+        raise ValueError(f"invalid robot URDF XML: {source}") from exc
+
+    for element in root.iter():
+        if element.tag.rsplit("}", 1)[-1] not in {"mesh", "texture"}:
+            continue
+        reference = element.get("filename")
+        if not reference:
+            continue
+        geometry = _local_geometry_path(source.parent, reference)
+        if geometry is None:
+            # Package/remote identifiers are already independent of the local
+            # checkout.  Preserve them as semantic model input.
+            element.set("filename", reference.replace("\\", "/"))
+            continue
+        if not geometry.is_file():
+            raise FileNotFoundError(
+                f"URDF geometry referenced by {source.name} is missing: {geometry}"
+            )
+        digest = hashlib.sha256(geometry.read_bytes()).hexdigest()
+        element.set("filename", f"sha256:{digest}:{geometry.name}")
+
+    canonical_xml = ElementTree.tostring(root, encoding="utf-8")
+    return hashlib.sha256(canonical_xml).hexdigest()
+
+
+def _local_geometry_path(urdf_directory: Path, reference: str) -> Path | None:
+    normalized = unquote(reference.strip())
+    if normalized.lower().startswith("file://"):
+        normalized = normalized[7:]
+        if normalized.startswith("/") and len(normalized) >= 3 and normalized[2] == ":":
+            normalized = normalized[1:]
+    elif "://" in normalized:
+        return None
+    geometry = Path(normalized)
+    if not geometry.is_absolute():
+        geometry = urdf_directory / geometry
+    return geometry.resolve()
 
 
 def _cache_candidate(

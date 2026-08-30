@@ -429,6 +429,38 @@ def test_workflow_contract_version_changes_cache_fingerprint(spec, monkeypatch):
     assert scene_spec_fingerprint(spec) != original
 
 
+def test_robot_fingerprint_is_checkout_path_independent_and_hashes_geometry(
+    spec,
+    tmp_path,
+):
+    fingerprints = []
+    copied_specs = []
+    for directory_name in ("checkout-a", "checkout-b"):
+        directory = tmp_path / directory_name
+        directory.mkdir()
+        mesh = directory / "link.obj"
+        mesh.write_text("v 0 0 0\n", encoding="utf-8")
+        urdf = directory / "robot.urdf"
+        urdf.write_text(
+            "<robot name='portable'><link name='base'><visual><geometry>"
+            "<mesh filename='link.obj'/></geometry></visual></link></robot>",
+            encoding="utf-8",
+        )
+        robots = dict(spec.robots)
+        robots["ur20"] = replace(robots["ur20"], urdf_path=urdf)
+        copied = replace(spec, robots=robots)
+        copied_specs.append(copied)
+        fingerprints.append(scene_spec_fingerprint(copied))
+
+    assert fingerprints[0] == fingerprints[1]
+
+    (tmp_path / "checkout-b" / "link.obj").write_text(
+        "v 0 0 1\n",
+        encoding="utf-8",
+    )
+    assert scene_spec_fingerprint(copied_specs[1]) != fingerprints[0]
+
+
 def test_complete_disjoint_lift_shards_merge_without_sparse_union(spec):
     def evaluator(
         received_spec,

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+import hashlib
+import json
 import math
 import os
 from pathlib import Path
@@ -14,6 +16,7 @@ from xml.etree import ElementTree
 import numpy as np
 
 from .models import BasePose, CutterProxySpec, SuctionProxySpec
+from .paths import repository_path
 
 
 OFFICIAL_UR20_COMMIT = "ae333289875f9ba5a9ea6649a54036efb5ccabee"
@@ -21,6 +24,131 @@ OFFICIAL_UR20_COMMIT = "ae333289875f9ba5a9ea6649a54036efb5ccabee"
 
 _ROBOT_DESCRIPTIONS_CACHE_ENV = "ROBOT_DESCRIPTIONS_CACHE"
 _UR_DESCRIPTION_REPOSITORY = "Universal_Robots_ROS2_Description"
+_VENDORED_UR20_PROVENANCE_SCHEMA_VERSION = 1
+_VENDORED_UR20_FILES = frozenset(
+    {
+        "LICENSE-BSD-3-Clause.txt",
+        "LICENSE-UR-GRAPHICAL-DOCUMENTATION.txt",
+        "meshes/collision/base.stl",
+        "meshes/collision/forearm.stl",
+        "meshes/collision/shoulder.stl",
+        "meshes/collision/upperarm.stl",
+        "meshes/collision/wrist1.stl",
+        "meshes/collision/wrist2.stl",
+        "meshes/collision/wrist3.stl",
+        "meshes/visual/UR20_DIFF_8bit_2K.png",
+        "meshes/visual/base.dae",
+        "meshes/visual/forearm.dae",
+        "meshes/visual/shoulder.dae",
+        "meshes/visual/upperarm.dae",
+        "meshes/visual/wrist1.dae",
+        "meshes/visual/wrist2.dae",
+        "meshes/visual/wrist3.dae",
+        "ur20.urdf",
+    }
+)
+_VENDORED_UR20_MESH_FILES = frozenset(
+    path for path in _VENDORED_UR20_FILES if path.startswith("meshes/")
+)
+
+
+def default_vendored_ur20_root() -> Path:
+    """Return the repository-owned, portable official UR20 asset directory."""
+
+    return repository_path("assets", "robots", "ur20", "official")
+
+
+def validate_vendored_ur20_asset(
+    root: str | Path | None = None,
+) -> Path:
+    """Validate the pinned UR20 bundle, its licenses, and every asset hash."""
+
+    asset_root = Path(
+        default_vendored_ur20_root() if root is None else root
+    ).resolve()
+    provenance_path = asset_root / "PROVENANCE.json"
+    try:
+        provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            f"vendored official UR20 provenance not found: {provenance_path}"
+        ) from exc
+    except (json.JSONDecodeError, OSError) as exc:
+        raise ValueError(
+            f"invalid vendored official UR20 provenance: {provenance_path}"
+        ) from exc
+    if not isinstance(provenance, dict):
+        raise ValueError("vendored official UR20 provenance root must be a mapping")
+    if provenance.get("schema_version") != _VENDORED_UR20_PROVENANCE_SCHEMA_VERSION:
+        raise ValueError("unsupported vendored official UR20 provenance schema")
+    if provenance.get("robot") != "ur20":
+        raise ValueError("vendored official UR20 provenance has the wrong robot")
+    if provenance.get("upstream_commit") != OFFICIAL_UR20_COMMIT:
+        raise ValueError(
+            "vendored official UR20 provenance commit does not match the pin"
+        )
+    if provenance.get("xacro_args") != {"name": "ur20", "ur_type": "ur20"}:
+        raise ValueError(
+            "vendored official UR20 provenance has unexpected Xacro arguments"
+        )
+
+    file_hashes = provenance.get("files_sha256")
+    if (
+        not isinstance(file_hashes, dict)
+        or set(file_hashes) != _VENDORED_UR20_FILES
+    ):
+        raise ValueError("vendored official UR20 provenance file set is incomplete")
+    for relative_name, expected_hash in sorted(file_hashes.items()):
+        if not isinstance(relative_name, str) or not isinstance(
+            expected_hash, str
+        ):
+            raise ValueError("vendored official UR20 file hashes must be strings")
+        relative_path = Path(relative_name)
+        target = (asset_root / relative_path).resolve()
+        if relative_path.is_absolute() or not target.is_relative_to(asset_root):
+            raise ValueError(
+                f"vendored official UR20 provenance path escapes its bundle: {relative_name}"
+            )
+        if not target.is_file():
+            raise FileNotFoundError(
+                f"vendored official UR20 file not found: {target}"
+            )
+        digest = hashlib.sha256(target.read_bytes()).hexdigest()
+        if digest != expected_hash:
+            raise ValueError(
+                f"vendored official UR20 file hash mismatch: {relative_name}"
+            )
+
+    urdf_path = asset_root / "ur20.urdf"
+    try:
+        urdf_root = ElementTree.fromstring(urdf_path.read_text(encoding="utf-8"))
+    except (ElementTree.ParseError, OSError) as exc:
+        raise ValueError(f"invalid vendored official UR20 URDF: {urdf_path}") from exc
+    if urdf_root.get("name") != "ur20":
+        raise ValueError("vendored official UR20 URDF has the wrong robot name")
+    mesh_references = {
+        element.get("filename")
+        for element in urdf_root.iter()
+        if element.tag.rsplit("}", 1)[-1] == "mesh"
+    }
+    expected_references = _VENDORED_UR20_MESH_FILES - {
+        "meshes/visual/UR20_DIFF_8bit_2K.png"
+    }
+    if mesh_references != expected_references:
+        raise ValueError(
+            "vendored official UR20 URDF must reference the portable mesh set"
+        )
+    if any(
+        filename is None
+        or "://" in filename
+        or Path(filename).is_absolute()
+        or ".." in Path(filename).parts
+        for filename in mesh_references
+    ):
+        raise ValueError(
+            "vendored official UR20 URDF contains a non-portable mesh path"
+        )
+    return urdf_path
 
 
 def _pinocchio_path(path: Path) -> Path:
@@ -439,13 +567,20 @@ def floating_configuration(
 def resolve_official_ur20(
     *, cache_dir: str | Path | None = None
 ) -> tuple[Path, tuple[Path, ...]]:
-    """Resolve the official UR20 4.3.1 Xacro at its immutable commit.
+    """Resolve the official UR20 model without a machine-specific path.
 
-    ``cache_dir`` controls both the upstream clone and generated URDF cache.
-    By default, the repository-local ignored ``.cache/robot_descriptions`` is
-    used. It is scoped to this call, so an existing
-    ``ROBOT_DESCRIPTIONS_CACHE`` value is restored afterwards.
+    With no argument, return the repository-owned flattened URDF and meshes
+    copied from release 4.3.1 at :data:`OFFICIAL_UR20_COMMIT`.  The bundle is
+    hash-validated and needs neither a network connection nor a user cache.
+
+    Passing ``cache_dir`` explicitly retains the upstream refresh/development
+    path: clone the immutable commit and generate its Xacro into that cache.
+    The ``ROBOT_DESCRIPTIONS_CACHE`` environment value is restored afterwards.
     """
+
+    if cache_dir is None:
+        urdf_path = validate_vendored_ur20_asset()
+        return urdf_path, (urdf_path.parent,)
 
     try:
         from robot_descriptions._cache import clone_to_cache
@@ -456,11 +591,7 @@ def resolve_official_ur20(
             "official UR20 requested; install robot_descriptions==3.1.0 and xacrodoc"
         ) from exc
 
-    resolved_cache = (
-        Path(cache_dir).expanduser().resolve()
-        if cache_dir is not None
-        else Path(__file__).resolve().parents[2] / ".cache" / "robot_descriptions"
-    )
+    resolved_cache = Path(cache_dir).expanduser().resolve()
     resolved_cache.mkdir(parents=True, exist_ok=True)
     cached_repository = (
         resolved_cache

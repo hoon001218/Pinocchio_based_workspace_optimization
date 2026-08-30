@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -13,6 +14,7 @@ from .candidates import BaseCandidateEvaluation, evaluate_base_candidate
 from .evaluation import EvaluationOptions
 from .kinematics import IKOptions
 from .models import BasePose, SceneState, default_config_path, load_scene_spec
+from .paths import portable_repository_reference
 from .robots import load_robot_bundle, resolve_official_ur20
 from .scene import CORNER_SIGNS
 from .workflow import CoordinationMode, WORKFLOW_SCHEMA_VERSION
@@ -177,11 +179,15 @@ def main(argv: list[str] | None = None) -> int:
             keepout_margin_m=args.keepout_margin_mm / 1000.0,
         )
         report = compact_candidate_report(result)
+        evaluated_urdf = Path(urdf).resolve()
+        evaluated_sr_urdf = Path(
+            args.sr12ia_urdf or spec.robots["sr12ia"].urdf_path
+        ).resolve()
         report["evaluation_settings"] = {
-            "ur20_urdf": str(Path(urdf).resolve()),
-            "sr12ia_urdf": str(
-                Path(args.sr12ia_urdf or spec.robots["sr12ia"].urdf_path).resolve()
-            ),
+            "ur20_urdf": _portable_asset_reference(evaluated_urdf),
+            "ur20_urdf_sha256": _sha256(evaluated_urdf),
+            "sr12ia_urdf": _portable_asset_reference(evaluated_sr_urdf),
+            "sr12ia_urdf_sha256": _sha256(evaluated_sr_urdf),
             "approach_distance_m": args.approach_mm / 1000.0,
             "cartesian_translation_step_m": args.cartesian_step_mm / 1000.0,
             "cartesian_rotation_step_rad": math.radians(
@@ -209,6 +215,20 @@ def main(argv: list[str] | None = None) -> int:
     except (FileNotFoundError, RuntimeError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
+
+
+def _portable_asset_reference(path: Path) -> str:
+    """Describe a model without embedding the checkout's absolute path."""
+
+    return portable_repository_reference(path)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def compact_candidate_report(result: BaseCandidateEvaluation) -> dict:

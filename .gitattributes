@@ -1,0 +1,6 @@
+# These assets are hash-validated byte-for-byte. Never apply checkout line-ending
+# conversion, even to XML/DAE/license files that Git may otherwise classify as text.
+assets/robots/ur20/official/** -text
+
+# Precomputed result caches are compressed binary artifacts.
+outputs/*.json.gz binary

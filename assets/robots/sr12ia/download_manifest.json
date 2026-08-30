@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "asset": "NVIDIA Isaac Sim 6.0 FANUC SR-12iA geometries.usd",
+  "url": "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/Isaac/Robots/Fanuc/sr12ia/payloads/geometries.usd",
+  "sha256": "1313afdb54a8c369a37e910c63007c6295cecd3d804226580fbef85c42e09740",
+  "fanuc_3d_content_sharing_agreement_url": "https://docs.isaacsim.omniverse.nvidia.com/6.0.0/_downloads/8ea27bd6ad258f4242d675e67e8f7b58/3D%20Content%20Sharing%20Agreement_FANUC.pdf",
+  "redistribution_note": "No FANUC or NVIDIA geometry is stored in this repository. The opt-in downloader requires explicit license acceptance and verifies this pinned digest before conversion."
+}

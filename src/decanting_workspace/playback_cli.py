@@ -16,6 +16,7 @@ from .asset_prep import (
 )
 from .meshcat_ui import MeshcatControlServer
 from .models import SceneSpec, SceneState, default_config_path, load_scene_spec
+from .paths import repository_path
 from .playback_backend import make_meshcat_backend, preferred_cached_case
 from .precompute import PrecomputedCache, load_precomputed_cache
 from .robots import resolve_official_ur20
@@ -77,6 +78,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Display-only SR URDF. By default playback uses the locally prepared "
             "FANUC/Isaac mesh without changing the cached evaluation model."
+        ),
+    )
+    parser.add_argument(
+        "--allow-sr-visual-fallback",
+        action="store_true",
+        help=(
+            "Explicitly allow the configured evaluation/proxy URDF to be "
+            "displayed when the prepared FANUC mesh is unavailable. Without "
+            "this flag playback fails instead of silently changing models."
         ),
     )
     parser.add_argument("--host", default="127.0.0.1")
@@ -147,10 +157,19 @@ def main(
                 visual_sr_urdf = resolver()
                 using_prepared_sr_mesh = True
             except (FileNotFoundError, OSError, ValueError) as exc:
+                if not args.allow_sr_visual_fallback:
+                    raise RuntimeError(
+                        "prepared FANUC SR-12iA visual asset is required; run "
+                        "'decanting-setup --accept-fanuc-license' (or provide "
+                        "--sr12ia-visual-urdf). Use "
+                        "--allow-sr-visual-fallback only when the approximate "
+                        "display is intentional"
+                    ) from exc
                 visual_sr_urdf = Path(evaluation_sr_urdf)
                 print(
-                    "WARNING: prepared FANUC SR-12iA mesh is unavailable "
-                    f"({exc}); displaying the evaluation model.",
+                    "WARNING: prepared FANUC SR-12iA mesh is unavailable; "
+                    "--allow-sr-visual-fallback requested, so the evaluation "
+                    f"model is displayed ({exc}).",
                     file=sys.stderr,
                 )
         display_only_sr_model = (
@@ -232,11 +251,7 @@ def _with_robot_paths(spec: SceneSpec, urdf: Path, sr_urdf: Path) -> SceneSpec:
 def default_working_cache_path() -> Path:
     """Return the repository-owned, full-path verified playback cache."""
 
-    return (
-        Path(__file__).resolve().parents[2]
-        / "outputs"
-        / "precomputed_working_cases.json.gz"
-    )
+    return repository_path("outputs", "precomputed_working_cases.json.gz")
 
 
 def _default_dependencies() -> PlaybackDependencies:
