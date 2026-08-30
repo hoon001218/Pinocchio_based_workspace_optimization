@@ -5,6 +5,8 @@ import pytest
 
 from decanting_workspace import load_scene_spec
 from decanting_workspace.robots import floating_configuration, load_robot_bundle
+from decanting_workspace.scene import sr_cutting_workspace_footprint_box
+from decanting_workspace.transforms import quaternion_matrix
 
 
 @pytest.fixture(scope="module")
@@ -15,7 +17,6 @@ def assets():
         "sr12ia",
         spec.robots["sr12ia"].urdf_path,
         load_visual=True,
-        cutter_proxy=spec.robots["sr12ia"].cutter_proxy,
     )
     return spec, ur, sr
 
@@ -53,7 +54,7 @@ def test_sr12ia_approximation_is_four_axis_and_nonempty(assets):
     assert sr.arm_velocity_slice == slice(6, 10)
 
 
-def test_sr12ia_nominal_working_pose_places_cutter_tcp_at_uncasing_frame(assets):
+def test_sr12ia_nominal_tool0_is_near_conveyor_edge_of_task_workspace(assets):
     import pinocchio as pin
 
     spec, _, sr = assets
@@ -61,11 +62,71 @@ def test_sr12ia_nominal_working_pose_places_cutter_tcp_at_uncasing_frame(assets)
     q = floating_configuration(sr, sr_spec.nominal_base, sr_spec.nominal_q)
     data = sr.model.createData()
     pin.framesForwardKinematics(sr.model, data, q)
-    cutter_tcp = np.asarray(
-        data.oMf[sr.model.getFrameId("cutter_tcp")].translation
+    tool_pose = data.oMf[sr.model.getFrameId("tool0")]
+    tool0 = np.asarray(tool_pose.translation).reshape(3)
+    load_frame = spec.frames["UncasingLoadFrame"]
+    group_frame = spec.frames["UncaseGroup"]
+    group_pose = quaternion_matrix(
+        group_frame.translation_m,
+        group_frame.rotation_xyzw,
+    )
+    group_positive_y = group_pose[:3, 1]
+    elbow = np.asarray(
+        data.oMf[sr.model.getFrameId("arm_2")].translation
     ).reshape(3)
+    footprint = sr_cutting_workspace_footprint_box(spec, sr_spec.nominal_base)
+    yaw = np.deg2rad(footprint.yaw_deg)
+    c = np.cos(yaw)
+    s = np.sin(yaw)
+    half_x, half_y = np.asarray(footprint.size_m[:2]) / 2.0
+    footprint_corner_x = [
+        footprint.center_m[0] + c * sign_x * half_x - s * sign_y * half_y
+        for sign_x in (-1.0, 1.0)
+        for sign_y in (-1.0, 1.0)
+    ]
+    conveyor_edge_x = max(footprint_corner_x)
+    expected_xy = np.array(
+        (
+            conveyor_edge_x - 0.02,
+            load_frame.translation_m[1] + 0.10 * group_positive_y[1],
+        )
+    )
+    world_offset = tool0[:2] - np.asarray(footprint.center_m[:2])
+    footprint_local = np.array(
+        (
+            c * world_offset[0] + s * world_offset[1],
+            -s * world_offset[0] + c * world_offset[1],
+        )
+    )
 
-    assert cutter_tcp == pytest.approx(
-        spec.frames["UncasingLoadFrame"].translation_m,
+    assert tool0[:2] == pytest.approx(expected_xy, abs=1e-9)
+    assert tool0[2] > load_frame.translation_m[2]
+    assert np.asarray(tool_pose.rotation)[:, 0] == pytest.approx(
+        group_positive_y,
         abs=1e-9,
     )
+    assert sr_spec.nominal_q[1] < 0.0
+    assert elbow[0] > sr_spec.nominal_base.x_m
+    assert conveyor_edge_x - tool0[0] == pytest.approx(0.02, abs=1e-9)
+    assert np.all(np.abs(footprint_local) <= np.asarray(footprint.size_m[:2]) / 2.0)
+
+
+def test_ur20_nominal_pose_points_tool0_toward_pallet(assets):
+    import pinocchio as pin
+
+    spec, ur, _ = assets
+    ur_spec = spec.robots["ur20"]
+    q = floating_configuration(ur, ur_spec.nominal_base, ur_spec.nominal_q)
+    data = ur.model.createData()
+    pin.framesForwardKinematics(ur.model, data, q)
+    tool0 = np.asarray(data.oMf[ur.model.getFrameId("tool0")].translation).reshape(3)
+    tool_direction = tool0[:2] - np.asarray(ur_spec.nominal_base.xyz_m[:2])
+    pallet_direction = np.asarray(spec.pallet.center_xy_m) - np.asarray(
+        ur_spec.nominal_base.xyz_m[:2]
+    )
+    cosine = float(
+        np.dot(tool_direction, pallet_direction)
+        / (np.linalg.norm(tool_direction) * np.linalg.norm(pallet_direction))
+    )
+
+    assert cosine > 0.999999

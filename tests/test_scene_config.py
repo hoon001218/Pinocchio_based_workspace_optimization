@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 from decanting_workspace import load_scene_spec
-from decanting_workspace.viewer import CellViewer
 
 
 @pytest.fixture(scope="module")
@@ -22,17 +21,7 @@ def test_corrected_dimensions_and_ranges(spec):
     )
     assert spec.robots["ur20"].suction_proxy is not None
     assert spec.robots["ur20"].suction_proxy.pad_radius_m == pytest.approx(0.075)
-    assert spec.robots["sr12ia"].cutter_proxy is not None
-    assert spec.robots["sr12ia"].cutter_proxy.size_m == pytest.approx(
-        (0.250, 0.090, 0.110)
-    )
-    cutter_radius, cutter_z_min, cutter_z_max = CellViewer._cutter_swept_extents(
-        spec.robots["sr12ia"].cutter_proxy
-    )
-    assert cutter_radius == pytest.approx(
-        ((0.120 + 0.125) ** 2 + 0.045**2) ** 0.5
-    )
-    assert (cutter_z_min, cutter_z_max) == pytest.approx((-0.110, 0.0))
+    assert spec.robots["sr12ia"].cutter_proxy is None
 
 
 def test_fixed_usd_proxy_inventory(spec):
@@ -66,6 +55,7 @@ def test_required_task_frames_are_present(spec):
         "ToteLoadFrame",
         "TotePickupFrame",
         "ToteSupplyFrame",
+        "UncaseGroup",
         "UncasingLoadFrame",
         "WasteFrame",
     } <= set(spec.frames)

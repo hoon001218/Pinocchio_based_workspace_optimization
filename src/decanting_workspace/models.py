@@ -81,6 +81,8 @@ class ToteSpec:
     size_m: Vec3
     representative_frame: str
     support_surface_z_m: float
+    representative_yaw_deg: float
+    motion_support_box: str
 
 
 @dataclass(frozen=True)
@@ -164,6 +166,7 @@ class SceneState:
     sku: str = "123591"
     corner_samples: tuple[str, ...] = ("southwest", "southeast", "northwest", "northeast")
     tote_present: bool = True
+    tote_long_axis_offset_m: float = 0.0
     sr_j3_stroke_m: float = 0.30
     clearance_m: float | None = None
 
@@ -251,9 +254,19 @@ def load_scene_spec(path: str | Path | None = None) -> SceneSpec:
         support_surface_z_m=_finite_float(
             tote_raw.get("support_surface_z_m"), "tote.support_surface_z_m"
         ),
+        representative_yaw_deg=_finite_float(
+            tote_raw.get("representative_yaw_deg", 0.0),
+            "tote.representative_yaw_deg",
+        ),
+        motion_support_box=str(tote_raw.get("motion_support_box", "")),
     )
     if tote.representative_frame not in frames:
         raise ValueError(f"unknown tote representative frame: {tote.representative_frame}")
+    support_boxes = {box.name: box for box in static_boxes}
+    if tote.motion_support_box not in support_boxes:
+        raise ValueError(f"unknown tote motion support box: {tote.motion_support_box}")
+    if support_boxes[tote.motion_support_box].role != "worktable":
+        raise ValueError("tote motion support box must have role 'worktable'")
 
     robots_raw = _mapping(raw, "robots")
     robots: dict[str, RobotSpec] = {}

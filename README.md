@@ -1,6 +1,6 @@
 # Pinocchio-based decanting workspace
 
-Python-only scene and robot-model foundation for the decanting-cell base-placement study. The scene is independent of Isaac Sim and ROS/MoveIt at runtime, so the same validated `SceneSnapshot` can later feed Pinocchio/Coal collision-aware IK, UR20 Jacobian metrics, and the candidate-iteration layer.
+Python-only scene, task, and robot-model foundation for the decanting-cell base-placement study. The runtime is independent of Isaac Sim and ROS/MoveIt: one validated `SceneSnapshot` feeds Pinocchio FK/IK/Jacobians, Coal collision checks, conservative SR task-workspace screening, and the reusable base-candidate evaluator.
 
 Implemented in this stage:
 
@@ -12,8 +12,30 @@ Implemented in this stage:
 - independently movable UR20 and SR-12iA bases, including mounting height and pedestal;
 - the official mesh-based UR20 description as the visualization default;
 - a local FANUC/Isaac SR-12iA mesh preparation path and a corrected conservative primitive fallback;
-- a provisional UR20 suction proxy and SR cutting-tool proxy;
-- an SR-12iA cutter-TCP task footprint tied to the support-cube top.
+- a provisional UR20 suction proxy; the SR-12iA currently has no process tool;
+- an SR-12iA `tool0` cutting-task footprint tied to the support-cube top;
+- nominal display poses aimed toward the pallet (UR20), with the SR-12iA
+  `tool0` on the opposite-elbow branch, 0.10 m beyond `UncasingLoadFrame`
+  toward the worktable, 0.02 m inside the configured task workspace's
+  conveyor-side edge, and aligned to `UncaseGroup +Y`;
+- a representative tote rotated 90 degrees so its long axis follows the
+  worktable's short axis;
+- the eight-step UR20 process as phase-specific poses and moving-object states;
+- fixed-base, arm-only Pinocchio IK and Jacobian-ellipsoid metrics;
+- deterministic IK branch retry when a numerically valid endpoint branch has
+  a colliding local joint interpolation segment;
+- explicit robot/self/environment/payload collision pairs (the URDFs load
+  with geometry but no collision-pair list);
+- separate simultaneous and sequential scenarios, with a conservative
+  Pinocchio-derived SR concurrent exclusion OBB for steps 3 and 4;
+- conservative SR box-top checks against the configured footprint, planar 2R
+  joint ranges, and the selected 300/450 mm J3 range;
+- an objective-free candidate API and compact JSON report CLI ready for a
+  later optimization loop;
+- an explicit finite case-grid cache containing replayable Pinocchio `q`, TCP
+  poses, collision diagnostics, and manipulability-ellipsoid axes;
+- a local parameter/step control panel around live Meshcat, with no IK work in
+  the browser or during pose replay.
 
 ## Environment
 
@@ -60,9 +82,9 @@ python -m decanting_workspace.asset_prep `
 
 It writes eight OBJ files, a four-axis URDF, and a provenance manifest to the ignored directory `.cache/robot_assets/sr12ia`. The supplied Isaac asset is the standard 300 mm J3 model, so its generated URDF is limited to `0...0.300 m`. The viewer's default `--sr12ia-source auto` uses it only for the 300 mm scenario. A 450 mm scenario automatically uses the corrected provisional fallback; `--sr12ia-source mesh` rejects that mismatch. Use `--sr12ia-source approximate` to force the fallback, or `--sr12ia-urdf PATH` for a matching manufacturer model.
 
-The fallback follows the real 2R-P-R skeleton: `L1 = L2 = 0.450 m`, the arm plane is `0.336 m` above the base, J3 moves downward through `0...0.450 m`, and J4/tool0 has no artificial translational offset. At zero joint position, `tool0 = [0.900, 0, 0.336] m`. Its shaft uses the longer 450 mm-option height for both choices, conservatively over-approximating the 300 mm fallback until the corresponding manufacturer asset is available. A config-driven cutter collision/visual proxy and `cutter_tcp` are attached when the manufacturer arm mesh has no tool.
+The fallback follows the real 2R-P-R skeleton: `L1 = L2 = 0.450 m`, the arm plane is `0.336 m` above the base, J3 moves downward through `0...0.450 m`, and J4/tool0 has no artificial translational offset. At zero joint position, `tool0 = [0.900, 0, 0.336] m`. Its shaft uses the longer 450 mm-option height for both choices, conservatively over-approximating the 300 mm fallback until the corresponding manufacturer asset is available. No process tool or provisional cutter is attached to the current SR model.
 
-The default SR guide is deliberately **not** the arm's full `0.9 m` mechanical reach or a swept-link cylinder. It is the permitted XY target region for `cutter_tcp`: the oriented top footprint of the SR support cube, inset only by the selected `--clearance-mm`. Cutting Z comes from each box-top task pose and is checked later with J3 limits and collision-aware IK. The cutter body and both robots' swept links remain collision geometry, so concurrent UR20/SR motion must be checked along the actual trajectories rather than against this task footprint.
+The default SR guide is deliberately **not** the arm's full `0.9 m` mechanical reach or a swept-link cylinder. It is the permitted XY target region for `tool0`: the oriented top footprint of the SR support cube, inset only by the selected `--clearance-mm`. Candidate evaluation places the real SKU on `UncasingLoadFrame`, checks its four top corners against this footprint, verifies a joint-limit-valid planar 2R branch, and checks cutting Z against the selected J3 range. No cutter offset is assumed. During simultaneous UR work, a separate OBB encloses both this configured task region and the SR collision geometry at its designated cutting posture; sequential mode omits that dynamic OBB while retaining the fixed pedestal and camera supports. An exact SR cutting path and final tool collision model remain later inputs.
 
 The Universal Robots graphical documentation and FANUC/Isaac assets have separate licenses. In particular, the FANUC 3D Content Sharing Agreement restricts standalone redistribution, so derived SR mesh files stay under `.cache` and are not committed. Review the applicable terms before sharing generated assets.
 
@@ -103,16 +125,198 @@ Candidate/scenario controls are:
 --corner all|southwest|southeast|northwest|northeast
 --sr-j3-stroke-mm 300|450
 --clearance-mm VALUE
+--tote-table-offset-mm VALUE
 ```
 
 `--corner all` shows four translucent alternative samples; it does not create four simultaneous collision boxes. Selecting one corner creates one physical box scenario.
+
+`--tote-table-offset-mm` translates both the representative tote and its
+`ToteLoadFrame` along the supporting worktable's long axis. For the nominal
+geometry, positive offset is World `+X` and the valid range is approximately
+`-273.355...1086.645 mm`; values outside it are rejected so the tote does not
+cross a long table edge.
+
+## Evaluate a base candidate
+
+The evaluation command has no viewer in its loop. It uses the pinned official
+UR20 collision mesh by default and writes a compact report without storing the
+large per-sample joint vectors or Jacobian matrices:
+
+```powershell
+python -m decanting_workspace.candidate_cli `
+  --sku 123591 `
+  --corner all `
+  --coordination both `
+  --lift-height-mm 0 `
+  --sr-j3-stroke-mm 300 `
+  --output-json outputs\candidate.json
+```
+
+The task contract is:
+
+1. top-down pick from each selected pallet corner independently;
+2. top-down placement at `UncasingLoadFrame`, with World-Z yaw `+180 deg`;
+3. front pick of the level-2 empty tote, followed by a vertical lift;
+4. placement at the movable `ToteLoadFrame`;
+5. front pick of the opened box from its UR-nearest vertical face;
+6. pouring sequence marker only (no pose test yet);
+7. optional level-3 waste fit and release IK (Soft; never rejects a base);
+8. push from the conveyor-opposite tote face to the exact
+   `ToteSupplyFrame` endpoint, then independently verify the final pushing
+   posture at that endpoint even if the sampled push path stops early.
+
+The independent final-pose sample retains its collision result and
+manipulability ellipsoid for UI inspection, but is excluded from scenario
+metric-summary means because the same endpoint is already sampled by the push
+segment. This prevents accidental double weighting in a later objective.
+
+Steps 1--5 and 8 are Hard. A coordination result is UR-feasible only when all
+selected corner alternatives satisfy every Hard check. `cell_feasible` also
+requires the SR cutting-workspace report to pass. Simultaneous and sequential
+results are kept separate.
+
+Every target is `World_T_suction_tcp`. The pallet top-down rotation is obtained
+by Pinocchio FK at the candidate base and nominal arm pose. The floating root
+is then frozen exactly: IK and manipulability use only the six UR arm columns.
+The reported ellipsoid inputs include translational singular values/volume and
+a dimensionally normalized 6-D metric using a configurable characteristic
+length; no weights, aggregation objective, or candidate ranking are imposed.
+
+Approach segments are sampled in Cartesian space and adjacent IK solutions are
+sampled in joint space for collision diagnostics. The solver is deterministic
+multi-start damped least squares. Therefore `not_found` means that this search
+did not find a valid solution; it is not a proof of global IK or motion-planning
+infeasibility. Long station-to-station global paths, the pour pose, exact SR
+cutting trajectory, payload dynamics, suction limits, and push forces are not
+claimed by this stage.
+
+The checked nominal report is
+[`outputs/nominal_candidate_all_corners.json`](outputs/nominal_candidate_all_corners.json).
+With the settings recorded inside that file, pallet pick and Uncasing placement
+pass for all four corner alternatives. The nominal SR base passes footprint and
+planar reach but its arm plane is `0.107659328 m` below the SKU 123591 box top,
+so its vertical task check fails. Sequential UR handling then fails at the
+current tote placement, opened-box side-pick, and tote-push poses because the
+reported IK branches collide with the worktable/camera support or robot itself.
+Simultaneous mode additionally fails tote pickup against the conservative SR
+reserved volume. These are diagnostics for the starting layout, not an
+optimized result or a global infeasibility proof.
+
+## Precompute cases and replay them in Meshcat
+
+### Verified commissioning setup
+
+`config/case_grid_working.yaml` is the reproducible opening setup for the UI:
+
+- UR20 base: `[-1.300, -7.350, 0.850, 90 deg]`
+- SR-12iA base: `[-0.300, -7.073643684, 0.665, -90 deg]`
+- all five SKUs, pallet lift `0.200 m`, tote offset `+0.700 m`
+- SR J3 stroke `0.450 m`
+
+The generated `outputs/precomputed_working_cases.json.gz` uses the official
+UR20 collision meshes and the normal `50 mm` Cartesian, `5 deg` rotation, and
+three-sample joint-segment checks. All 20 sequential SKU/corner cases pass UR20
+HARD steps 1--5 and 8. Twelve also pass the SR cutting-workspace check: all four
+corners for SKUs `123591`, `430060`, and `000509`. Step 7 remains SOFT and may
+fail IK, as permitted by the process definition. The 20 simultaneous cases are
+retained intentionally: tote handling fails against the conservative SR
+exclusion box, so they are diagnostic rather than presented as feasible.
+
+Regenerate the verified cache with:
+
+```powershell
+decanting-precompute `
+  --grid config\case_grid_working.yaml `
+  --output-json outputs\precomputed_working_cases.json.gz
+```
+
+Open it directly; `--cache` now defaults to that verified cache:
+
+```powershell
+decanting-playback --open
+```
+
+The panel reports `12 / 40` full-cell-feasible cases and opens the first passing
+sequential case. The smallest observed collision clearance is approximately
+`6.464 mm` at the box/SR support boundary, so this is a simulation
+commissioning point rather than a robust production clearance. With the
+current no-tool-offset SR model and solid floor-to-base pedestal proxy, SKUs
+`180043` and `049995` cannot satisfy SR vertical reach without the pedestal
+entering the box support volume. They must therefore be revisited when the
+cutter/tool offset or the mounting/support geometry is defined; the preset does
+not hide that model limitation.
+
+### Explicit exploration grid
+
+Continuous base placement and lift/tote motion do not have a finite set of
+"all" values. `config/case_grid_nominal.yaml` therefore declares every value
+that is precomputed. Its current 720 exact cases cover all five known SKUs,
+three lift heights, three tote-frame positions, four independent pallet
+corners, both coordination modes, and both SR J3 options. UR20 and SR-12iA are
+nominal-only because their search bounds have not yet been supplied. Add base
+axis values to that YAML when the bounds are fixed; the exact Cartesian-product
+count is printed before either robot is loaded.
+
+Create a full path-sampled cache with the official UR20 collision model:
+
+```powershell
+decanting-precompute `
+  --grid config\case_grid_nominal.yaml `
+  --output-json outputs\precomputed-cases.json.gz
+```
+
+The checked-in workspace also contains the generated
+`outputs/precomputed_nominal_cases.json.gz`. It is deliberately a task-pose
+playback cache: each Cartesian check stores its start/end samples, while joint
+interpolation is disabled. Its settings are preserved inside the cache and it
+must not be presented as a continuous collision-free path result. It was
+generated using:
+
+```powershell
+decanting-precompute `
+  --grid config\case_grid_nominal.yaml `
+  --output-json outputs\precomputed_nominal_cases.json.gz `
+  --cartesian-step-mm 10000 `
+  --cartesian-rotation-step-deg 180 `
+  --joint-interpolation-samples 0
+```
+
+Open the broader diagnostic cache explicitly:
+
+```powershell
+decanting-playback `
+  --cache outputs\precomputed_nominal_cases.json.gz `
+  --open
+```
+
+The page combines a local parameter panel and a live Meshcat iframe. Selecting
+a case, process step, check, or sample performs an exact cache lookup. A
+successful sample displays the stored robot configuration and the
+translational ellipsoid reconstructed from its cached World-aligned SVD
+directions and singular values. A failed IK sample shows its best diagnostic
+configuration with a red target frame but hides the ellipsoid. Step 6 retains
+the previous successful posture and is labelled as having no pose check.
+
+Robot visual models are loaded only once. The default live UI uses the pinned
+official UR20 mesh without embedding it in an exported HTML file. Playback
+also auto-loads the locally prepared FANUC/Isaac SR-12iA mesh from
+`.cache/robot_assets/sr12ia/sr12ia_mesh.urdf`; this display-only choice does
+not replace the SR collision/kinematic model recorded in the cache. Use
+`--sr12ia-visual-urdf PATH` to override only the displayed SR model, and use
+`--sr12ia-urdf PATH` when the evaluation/fingerprint model itself must change.
+Cache loading verifies the scene, workflow contract, and actual evaluation
+URDF fingerprints, so results from a different task or model are rejected
+instead of silently replayed. The prepared Isaac mesh is the 300 mm J3 option;
+it may visualize a 450 mm study only while the cached displayed J3 posture is
+within 300 mm. Feasibility remains explicitly tied to the 450 mm evaluation
+model in that case.
 
 ## Computation/visualization split
 
 Visual meshes must not be loaded inside a base-optimization iteration. Resolve and load each robot once before the candidate loop. For UR20, `load_visual=False` keeps the kinematic model and collision STL geometry while omitting the DAE viewer model:
 
 ```python
-from decanting_workspace import load_scene_spec
+from decanting_workspace import SceneState, evaluate_base_candidate, load_scene_spec
 from decanting_workspace.robots import load_robot_bundle, resolve_official_ur20
 
 spec = load_scene_spec()
@@ -124,15 +328,28 @@ ur20 = load_robot_bundle(
     load_visual=False,
     suction_proxy=spec.robots["ur20"].suction_proxy,
 )
+sr12ia = load_robot_bundle(
+    "sr12ia",
+    spec.robots["sr12ia"].urdf_path,
+    load_visual=False,
+)
 
-for candidate in base_candidates:
-    # Reuse ur20.model and ur20.collision_model here.
-    ...
+state = SceneState()  # vary SKU/lift/tote offset/J3 outside the base loop
+for ur_base, sr_base in base_candidates:
+    raw_result = evaluate_base_candidate(
+        spec,
+        state,
+        ur_base,
+        sr_base,
+        ur20,
+        sr12ia,
+    )
+    # A later optimizer consumes raw_result; this layer does not rank it.
 ```
 
-If an SR bundle is used directly for collision checks, call
-`configure_sr_j3_stroke(bundle, state.sr_j3_stroke_m)` when the scenario changes.
-It restores/restricts the limit against the model's native capability, so a
-300 mm scenario cannot accidentally evaluate J3 positions out to 450 mm.
-
-The final manipulability definition, collision-aware IK, trajectory checking, simultaneous/sequential timing constraints, and objective aggregation remain the next layer. `config/cell_nominal.yaml` is the authoritative dimension source; USD is retained only as geometry/frame provenance.
+`evaluate_base_candidate` applies the selected SR J3 limit on each call and
+rejects a 450 mm study if the supplied SR model supports only 300 mm. The
+bundled fallback conservatively supports both choices. `config/cell_nominal.yaml`
+is the authoritative dimension source; USD is retained only as geometry/frame
+provenance. The remaining optimization work is to choose sampling bounds and
+an objective/constraint aggregation over these raw results.

@@ -10,15 +10,13 @@
 
   The compound primitives are deliberately conservative visualization and
   collision proxies. They are not FANUC CAD and must not be used as a
-  mechanical fabrication drawing. The cutter is provisional; importantly,
-  its geometry is a child of tool0 and does not redefine the robot flange.
+  mechanical fabrication drawing. No process tool is attached to tool0.
 -->
 <robot name="fanuc_sr12ia_approx">
   <material name="fanuc_yellow"><color rgba="0.96 0.76 0.02 1"/></material>
   <material name="fanuc_yellow_dark"><color rgba="0.78 0.58 0.00 1"/></material>
   <material name="fanuc_dark"><color rgba="0.12 0.13 0.14 1"/></material>
   <material name="metal"><color rgba="0.48 0.50 0.52 1"/></material>
-  <material name="provisional_tool"><color rgba="0.86 0.28 0.06 1"/></material>
 
   <link name="world"/>
 
@@ -189,29 +187,6 @@
   <!-- The flange frame is intentionally empty and exactly coincident with J4. -->
   <link name="tool0"/>
 
-  <!-- Provisional box-opening tool. Replace when the selected tool CAD exists. -->
-  <link name="cutter_proxy">
-    <visual name="cutter_mount">
-      <origin xyz="0.055 0 -0.035" rpy="0 0 0"/>
-      <geometry><box size="0.110 0.070 0.070"/></geometry>
-      <material name="provisional_tool"/>
-    </visual>
-    <visual name="cutter_body">
-      <origin xyz="0.145 0 -0.0525" rpy="0 0 0"/>
-      <geometry><box size="0.120 0.052 0.055"/></geometry>
-      <material name="fanuc_dark"/>
-    </visual>
-    <visual name="cutter_blade_guard">
-      <origin xyz="0.205 0 -0.0875" rpy="0 0 0"/>
-      <geometry><box size="0.030 0.025 0.045"/></geometry>
-      <material name="metal"/>
-    </visual>
-    <collision name="cutter_conservative_envelope">
-      <origin xyz="0.120 0 -0.055" rpy="0 0 0"/>
-      <geometry><box size="0.250 0.090 0.110"/></geometry>
-    </collision>
-  </link>
-
   <joint name="base_joint" type="fixed">
     <parent link="world"/>
     <child link="base_link"/>
@@ -256,9 +231,4 @@
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
-  <joint name="tool0-provisional-cutter" type="fixed">
-    <parent link="tool0"/>
-    <child link="cutter_proxy"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
-  </joint>
 </robot>

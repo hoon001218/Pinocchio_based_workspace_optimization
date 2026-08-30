@@ -19,7 +19,9 @@ URDF_PATH = (
 
 @pytest.fixture(scope="module")
 def sr12ia():
-    return load_robot_bundle("sr12ia", URDF_PATH, floating_base=False)
+    return load_robot_bundle(
+        "sr12ia", URDF_PATH, floating_base=False, load_visual=True
+    )
 
 
 def _frame_translation(bundle, frame_name: str, q: np.ndarray) -> np.ndarray:
@@ -60,14 +62,11 @@ def test_j3_extension_moves_tool0_down_without_xy_or_fixed_flange_offset(
     assert tool0 == pytest.approx(joint4, abs=1e-12)
 
 
-def test_provisional_cutter_does_not_redefine_tool0(sr12ia):
-    q = np.array((0.37, -0.52, 0.21, 1.13))
-    tool0 = _frame_translation(sr12ia, "tool0", q)
-    cutter_frame = _frame_translation(sr12ia, "cutter_proxy", q)
-
-    # Cutter geometry is offset inside its link, while its child frame remains
-    # coincident with the true J4/tool0 flange datum.
-    assert cutter_frame == pytest.approx(tool0, abs=1e-12)
+def test_no_process_tool_is_attached_to_sr12ia_fallback(sr12ia):
+    assert not sr12ia.model.existFrame("cutter_proxy")
+    assert not sr12ia.model.existFrame("cutter_tcp")
+    assert all("cutter" not in geometry.name for geometry in sr12ia.collision_model.geometryObjects)
+    assert all("cutter" not in geometry.name for geometry in sr12ia.visual_model.geometryObjects)
 
 
 def test_official_joint_ranges_are_encoded(sr12ia):

@@ -6,7 +6,7 @@ import math
 import pytest
 
 from decanting_workspace import BasePose, load_scene_spec
-from decanting_workspace.scene import sr_cutting_tcp_footprint_box
+from decanting_workspace.scene import sr_cutting_workspace_footprint_box
 from decanting_workspace.viewer import CellViewer
 
 
@@ -44,12 +44,12 @@ def _with_clearance(spec, clearance_m: float):
     return replace(spec, robots=robots)
 
 
-def test_cutting_tcp_footprint_uses_pedestal_top_not_full_scara_reach(spec):
+def test_cutting_workspace_uses_pedestal_top_not_full_scara_reach(spec):
     base = spec.robots["sr12ia"].nominal_base
-    result = sr_cutting_tcp_footprint_box(spec, base)
+    result = sr_cutting_workspace_footprint_box(spec, base)
 
     # This is the box-opening task plane, not the SCARA's full 0.9 m reach.
-    assert result.name == "sr12ia_cutting_tcp_footprint"
+    assert result.name == "sr12ia_cutting_workspace_footprint"
     assert result.role == "task_workspace"
     assert result.center_m == pytest.approx(
         (-0.233218148, -7.358607684, 0.558805667)
@@ -59,9 +59,9 @@ def test_cutting_tcp_footprint_uses_pedestal_top_not_full_scara_reach(spec):
     assert not result.collision_enabled
 
 
-def test_cutting_tcp_footprint_follows_candidate_translation_and_yaw(spec):
+def test_cutting_workspace_follows_candidate_translation_and_yaw(spec):
     base = BasePose(1.25, -2.0, 0.8, 30.0)
-    result = sr_cutting_tcp_footprint_box(spec, base)
+    result = sr_cutting_workspace_footprint_box(spec, base)
 
     pedestal_offset_x = spec.robots["sr12ia"].pedestal.center_offset_local_xy_m[0]
     expected_center_x = base.x_m + math.cos(base.yaw_rad) * pedestal_offset_x
@@ -77,7 +77,7 @@ def test_clearance_insets_each_pedestal_edge_without_cutter_radius_inset(spec):
     clearance_m = 0.05
     inset_spec = _with_clearance(spec, clearance_m)
     base = BasePose(0.3, -1.7, 0.7, 37.0)
-    result = sr_cutting_tcp_footprint_box(inset_spec, base)
+    result = sr_cutting_workspace_footprint_box(inset_spec, base)
     pedestal = inset_spec.robots["sr12ia"].pedestal
 
     assert result.size_m == pytest.approx(
@@ -108,18 +108,18 @@ def test_clearance_insets_each_pedestal_edge_without_cutter_radius_inset(spec):
             )
 
 
-def test_cutting_tcp_footprint_rejects_empty_inset(spec):
+def test_cutting_workspace_rejects_empty_inset(spec):
     invalid_spec = _with_clearance(spec, 0.375)
 
     with pytest.raises(ValueError, match=r"(?i)(clearance|footprint|workspace)"):
-        sr_cutting_tcp_footprint_box(
+        sr_cutting_workspace_footprint_box(
             invalid_spec, invalid_spec.robots["sr12ia"].nominal_base
         )
 
 
 def test_nominal_uncasing_frame_is_inside_cutting_footprint_xy(spec):
     base = spec.robots["sr12ia"].nominal_base
-    result = sr_cutting_tcp_footprint_box(spec, base)
+    result = sr_cutting_workspace_footprint_box(spec, base)
     frame = spec.frames["UncasingLoadFrame"]
     dx = frame.translation_m[0] - base.x_m
     dy = frame.translation_m[1] - base.y_m
@@ -144,20 +144,20 @@ def test_nominal_uncasing_frame_is_inside_cutting_footprint_xy(spec):
     ) == pytest.approx((-7.908607684, -6.808607684))
 
 
-def test_viewer_replaces_full_scara_reach_guides_with_cutting_tcp_box(spec):
+def test_viewer_replaces_full_scara_reach_guides_with_cutting_workspace(spec):
     recorder = _RecordingViewer()
     viewer = object.__new__(CellViewer)
     viewer.viewer = recorder
     viewer._robots = []
 
-    viewer._render_sr_cutting_footprint(
+    viewer._render_sr_cutting_workspace(
         spec,
         spec.robots["sr12ia"].nominal_base,
         None,
         show_fill=True,
     )
 
-    root = "decanting/guides/sr12ia/cutting_tcp_footprint"
+    root = "decanting/guides/sr12ia/cutting_workspace"
     assert {f"{root}/boundary", f"{root}/volume"} <= set(recorder.nodes)
     obsolete_full_reach_guides = {
         "decanting/guides/sr12ia/reach_samples",

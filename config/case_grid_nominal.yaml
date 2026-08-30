@@ -1,0 +1,27 @@
+schema_version: 1
+units: m
+
+# Finite precomputation grid for the currently known process variables.
+# Robot-base search bounds have not yet been supplied, so both base grids are
+# intentionally nominal-only. Add explicit axis values here when those bounds
+# are fixed; the UI will expose every value contained in the generated cache.
+ur_base:
+  x_m: [-0.984849334]
+  y_m: [-7.267639160]
+  z_m: [0.730275512]
+  yaw_deg: [90.0]
+
+sr_base:
+  x_m: [-0.233218148]
+  y_m: [-7.073643684]
+  z_m: [0.554805667]
+  yaw_deg: [-90.0]
+
+skus: ["123591", "430060", "180043", "049995", "000509"]
+lift_heights_m: [0.0, 0.380, 0.760]
+tote_offsets_m: [-0.27335520199999996, 0.0, 1.086644798]
+corners: [southwest, southeast, northwest, northeast]
+coordination_modes: [simultaneous, sequential]
+sr_j3_strokes_m: [0.300, 0.450]
+clearances_m: [null]
+tote_present: true

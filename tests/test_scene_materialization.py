@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from decanting_workspace import BasePose, SceneState, load_scene_spec, materialize_scene
+from decanting_workspace import (
+    BasePose,
+    SceneState,
+    load_scene_spec,
+    materialize_scene,
+    tote_long_axis_offset_range_m,
+    tote_motion_axis_world_xy,
+)
 
 
 @pytest.fixture(scope="module")
@@ -40,6 +47,41 @@ def test_representative_tote_sits_on_first_level(spec):
     assert tote.center_m[:2] == pytest.approx(
         spec.frames[spec.tote.representative_frame].translation_m[:2]
     )
+    assert tote.size_m[:2] == pytest.approx((0.660, 0.440))
+    assert tote.yaw_deg == pytest.approx(90.0)
+
+
+def test_tote_and_reference_frame_move_together_along_worktable_long_axis(spec):
+    offset_m = 0.50
+    snapshot = materialize_scene(
+        spec,
+        SceneState(tote_long_axis_offset_m=offset_m),
+    )
+    tote = _box(snapshot, "representative_tote")
+    source = spec.frames[spec.tote.representative_frame]
+    moved = snapshot.frames[spec.tote.representative_frame]
+    axis = tote_motion_axis_world_xy(spec)
+    expected_xy = (
+        source.translation_m[0] + offset_m * axis[0],
+        source.translation_m[1] + offset_m * axis[1],
+    )
+
+    assert axis == pytest.approx((1.0, 0.0))
+    assert moved.translation_m[:2] == pytest.approx(expected_xy)
+    assert tote.center_m[:2] == pytest.approx(expected_xy)
+    assert spec.frames[spec.tote.representative_frame] == source
+
+
+def test_tote_long_axis_offset_range_keeps_it_between_table_long_edges(spec):
+    low, high = tote_long_axis_offset_range_m(spec)
+    assert (low, high) == pytest.approx((-0.273355202, 1.086644798))
+    materialize_scene(spec, SceneState(tote_long_axis_offset_m=low))
+    materialize_scene(spec, SceneState(tote_long_axis_offset_m=high))
+
+    with pytest.raises(ValueError, match="tote long-axis offset"):
+        materialize_scene(spec, SceneState(tote_long_axis_offset_m=low - 1e-6))
+    with pytest.raises(ValueError, match="tote long-axis offset"):
+        materialize_scene(spec, SceneState(tote_long_axis_offset_m=high + 1e-6))
 
 
 def test_pedestals_follow_candidate_height_and_yaw(spec):
@@ -64,4 +106,3 @@ def test_invalid_scenario_values_fail_early(spec):
         materialize_scene(spec, SceneState(sku="missing"))
     with pytest.raises(ValueError, match="J3 stroke"):
         materialize_scene(spec, SceneState(sr_j3_stroke_m=0.35))
-

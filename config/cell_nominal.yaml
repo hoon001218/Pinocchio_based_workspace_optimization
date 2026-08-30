@@ -104,12 +104,17 @@ tote:
   size_m: [0.660, 0.440, 0.300]
   representative_frame: ToteLoadFrame
   support_surface_z_m: 0.660
+  # Local long X axis is rotated onto the worktable's short World-Y axis.
+  representative_yaw_deg: 90.0
+  # The frame and tote can translate together along this table's long axis.
+  motion_support_box: worktable_current_a
 
 robots:
   ur20:
     urdf: ../assets/robots/ur20/ur20_primitive.urdf
     nominal_base: [-0.984849334, -7.267639160, 0.730275512, 90.0]
-    nominal_q_deg: [0.0, -90.0, 90.0, -90.0, -90.0, 0.0]
+    # Shoulder pan aims the folded arm from the base toward the pallet center.
+    nominal_q_deg: [79.641629852, -90.0, 90.0, -90.0, -90.0, 0.0]
     pedestal:
       size_xy_m: [0.30, 0.30]
       center_offset_local_xy_m: [0.0, 0.0]
@@ -122,9 +127,10 @@ robots:
   sr12ia:
     urdf: ../assets/robots/sr12ia/sr12ia_approx.urdf
     nominal_base: [-0.233218148, -7.073643684, 0.554805667, -90.0]
-    # Provisional stopped/working pose: cutter_tcp coincides with
-    # UncasingLoadFrame instead of extending outside the support-cube top.
-    nominal_q: [-0.698469601, 1.396939203, 0.109340672, 2.443123052]
+    # Opposite-elbow branch. tool0 is 0.10 m toward the worktable from
+    # UncasingLoadFrame and 0.02 m inside the configured cutting workspace's
+    # conveyor-side edge; its +X axis stays aligned with UncaseGroup local +Y.
+    nominal_q: [1.287263955214, -1.459295608198, 0.10, 0.172031652984]
     pedestal:
       size_xy_m: [1.10, 0.75]
       center_offset_local_xy_m: [0.284964, 0.0]
@@ -138,10 +144,6 @@ robots:
         role: camera_support
         center_m: [0.598084, 0.4, 0.403507]
         size_m: [0.05, 0.05, 0.807014]
-    cutter_proxy:
-      center_local_m: [0.120, 0.0, -0.055]
-      size_m: [0.250, 0.090, 0.110]
-      tcp_translation_local_m: [0.220, 0.0, -0.110]
     workspace:
       link_lengths_m: [0.45, 0.45]
       arm_plane_height_m: 0.336

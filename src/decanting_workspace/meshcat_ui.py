@@ -1,0 +1,314 @@
+"""Local web controls wrapped around a live MeshCat view.
+
+The browser never solves IK.  It submits exact selections from a precomputed
+catalog to a small localhost HTTP server; the supplied backend then updates an
+already-running MeshCat viewer from cached configurations and ellipsoid data.
+This keeps licensed robot meshes in the live MeshCat session instead of
+embedding them in a redistributable HTML report.
+"""
+
+from __future__ import annotations
+
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import html
+import json
+from threading import Lock, Thread
+from typing import Mapping, Protocol
+from urllib.parse import urlsplit
+
+
+class PlaybackBackend(Protocol):
+    """Interface consumed by :class:`MeshcatControlServer`."""
+
+    def catalog(self) -> Mapping[str, object]:
+        """Return JSON-compatible exact cases and step/check/sample metadata."""
+
+    def select(self, request: Mapping[str, object]) -> Mapping[str, object]:
+        """Apply one cached selection and return its display/status details."""
+
+
+class MeshcatControlServer(ThreadingHTTPServer):
+    """Threaded localhost server for the parameter panel and JSON API."""
+
+    daemon_threads = True
+
+    def __init__(
+        self,
+        address: tuple[str, int],
+        backend: PlaybackBackend,
+        meshcat_url: str,
+    ) -> None:
+        _validate_meshcat_url(meshcat_url)
+        self.backend = backend
+        self.meshcat_url = meshcat_url
+        self.selection_lock = Lock()
+        super().__init__(address, _PlaybackRequestHandler)
+
+    @property
+    def control_url(self) -> str:
+        host, port = self.server_address[:2]
+        visible_host = "127.0.0.1" if host in {"", "0.0.0.0", "::"} else host
+        return f"http://{visible_host}:{port}/"
+
+    def start_background(self) -> Thread:
+        """Start ``serve_forever`` in one daemon thread."""
+
+        thread = Thread(target=self.serve_forever, name="meshcat-control", daemon=True)
+        thread.start()
+        return thread
+
+
+class _PlaybackRequestHandler(BaseHTTPRequestHandler):
+    server: MeshcatControlServer
+
+    def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+        path = urlsplit(self.path).path
+        if path == "/":
+            self._send_bytes(
+                HTTPStatus.OK,
+                build_control_page(self.server.meshcat_url).encode("utf-8"),
+                "text/html; charset=utf-8",
+            )
+            return
+        if path == "/api/catalog":
+            payload = dict(self.server.backend.catalog())
+            payload["meshcat_url"] = self.server.meshcat_url
+            self._send_json(HTTPStatus.OK, payload)
+            return
+        if path == "/healthz":
+            self._send_json(HTTPStatus.OK, {"status": "ok"})
+            return
+        self._send_json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
+
+    def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+        if urlsplit(self.path).path != "/api/select":
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid_length"})
+            return
+        if length <= 0 or length > 64 * 1024:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid_length"})
+            return
+        try:
+            decoded = json.loads(self.rfile.read(length).decode("utf-8"))
+            if not isinstance(decoded, Mapping):
+                raise ValueError("request root must be an object")
+            with self.server.selection_lock:
+                result = self.server.backend.select(decoded)
+            self._send_json(HTTPStatus.OK, dict(result))
+        except (KeyError, TypeError, ValueError) as exc:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "invalid_selection", "message": str(exc)},
+            )
+        except Exception as exc:  # pragma: no cover - defensive server boundary
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": "selection_failed", "message": str(exc)},
+            )
+
+    def log_message(self, format: str, *args: object) -> None:
+        """Keep the interactive CLI quiet; status is visible in the panel."""
+
+    def _send_json(self, status: HTTPStatus, value: object) -> None:
+        body = json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        self._send_bytes(status, body, "application/json; charset=utf-8")
+
+    def _send_bytes(
+        self,
+        status: HTTPStatus,
+        body: bytes,
+        content_type: str,
+    ) -> None:
+        self.send_response(int(status))
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def build_control_page(meshcat_url: str) -> str:
+    """Return the dependency-free parameter/step UI around a MeshCat iframe."""
+
+    _validate_meshcat_url(meshcat_url)
+    escaped_url = html.escape(meshcat_url, quote=True)
+    return f"""<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Decanting workspace playback</title>
+<style>
+:root {{ color-scheme: dark; font-family: system-ui, sans-serif; }}
+* {{ box-sizing: border-box; }}
+html, body {{ width: 100%; height: 100%; margin: 0; overflow: hidden; background: #171a1f; color: #eef1f5; }}
+#layout {{ display: grid; grid-template-columns: minmax(300px, 360px) 1fr; width: 100%; height: 100%; }}
+#panel {{ overflow-y: auto; padding: 14px; background: #20242b; border-right: 1px solid #3c424c; }}
+#meshcat {{ width: 100%; height: 100%; border: 0; background: #111; }}
+h1 {{ margin: 0 0 12px; font-size: 18px; font-weight: 600; }}
+fieldset {{ margin: 0 0 12px; padding: 10px; border: 1px solid #49515d; border-radius: 7px; }}
+legend {{ padding: 0 5px; color: #b8c0cc; }}
+label {{ display: grid; grid-template-columns: 1fr minmax(118px, 1.2fr); align-items: center; gap: 8px; margin: 7px 0; font-size: 13px; }}
+select, input, button {{ width: 100%; min-width: 0; padding: 6px 7px; border: 1px solid #596270; border-radius: 5px; background: #171a1f; color: #eef1f5; }}
+button {{ cursor: pointer; background: #2d5f8b; border-color: #3976aa; font-weight: 600; }}
+.row {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }}
+#status {{ padding: 10px; border-radius: 7px; background: #171a1f; white-space: pre-wrap; font: 12px/1.45 ui-monospace, monospace; }}
+#status[data-level="success"] {{ border-left: 4px solid #39a96b; }}
+#status[data-level="failed"] {{ border-left: 4px solid #d76055; }}
+#status[data-level="skipped"] {{ border-left: 4px solid #d2a33b; }}
+.muted {{ color: #aeb7c3; font-size: 12px; }}
+.verified {{ margin: 0 0 12px; padding: 8px 10px; border-radius: 7px; background: #193b2a; color: #9de0b9; font-size: 12px; }}
+@media (max-width: 760px) {{
+  #layout {{ grid-template-columns: 1fr; grid-template-rows: minmax(310px, 44%) 1fr; }}
+  #panel {{ border-right: 0; border-bottom: 1px solid #3c424c; }}
+}}
+</style>
+</head>
+<body>
+<main id="layout">
+  <section id="panel" aria-label="사전 계산 결과 선택">
+    <h1>Decanting case playback</h1>
+    <p id="cacheSummary" class="verified">검증 결과를 불러오는 중…</p>
+    <fieldset><legend>Robot base</legend>
+      <label>UR20 X <select data-key="ur_x"></select></label>
+      <label>UR20 Y <select data-key="ur_y"></select></label>
+      <label>UR20 Z <select data-key="ur_z"></select></label>
+      <label>UR20 yaw <select data-key="ur_yaw"></select></label>
+      <label>SR-12iA X <select data-key="sr_x"></select></label>
+      <label>SR-12iA Y <select data-key="sr_y"></select></label>
+      <label>SR-12iA Z <select data-key="sr_z"></select></label>
+      <label>SR-12iA yaw <select data-key="sr_yaw"></select></label>
+    </fieldset>
+    <fieldset><legend>Process case</legend>
+      <label>SKU <select data-key="sku"></select></label>
+      <label>Lift height <select data-key="lift"></select></label>
+      <label>Tote offset <select data-key="tote"></select></label>
+      <label>SR J3 stroke <select data-key="stroke"></select></label>
+      <label>Clearance <select data-key="clearance"></select></label>
+      <label>Corner <select data-key="corner"></select></label>
+      <label>Coordination <select data-key="mode"></select></label>
+    </fieldset>
+    <fieldset><legend>Task pose</legend>
+      <label>Step <select id="step"></select></label>
+      <label>Check <select id="check"></select></label>
+      <label>Sample <select id="sample"></select></label>
+      <label>Ellipsoid scale <input id="ellipsoidScale" type="range" min="0.02" max="0.5" step="0.01" value="0.15"></label>
+      <label><span>Ellipsoid</span><input id="showEllipsoid" type="checkbox" checked></label>
+      <div class="row"><button id="previous" type="button">Previous step</button><button id="next" type="button">Next step</button></div>
+    </fieldset>
+    <p class="muted">표시 값은 cache의 정확한 조합입니다. 선택 시 IK를 다시 계산하지 않습니다.</p>
+    <output id="status" aria-live="polite">Loading cache…</output>
+  </section>
+  <iframe id="meshcat" src="{escaped_url}" title="MeshCat robot view"></iframe>
+</main>
+<script>
+"use strict";
+const parameterKeys = ["ur_x","ur_y","ur_z","ur_yaw","sr_x","sr_y","sr_z","sr_yaw","sku","lift","tote","stroke","clearance","corner","mode"];
+const selects = Object.fromEntries(parameterKeys.map(k => [k, document.querySelector(`[data-key="${{k}}"]`)]));
+const stepSelect = document.getElementById("step");
+const checkSelect = document.getElementById("check");
+const sampleSelect = document.getElementById("sample");
+const statusNode = document.getElementById("status");
+const cacheSummaryNode = document.getElementById("cacheSummary");
+let catalog = null;
+let activeCase = null;
+let requestSerial = 0;
+
+function textValue(value, unit="") {{ return value === null ? "default" : `${{value}}${{unit}}`; }}
+function flattenKey(item) {{
+  const k = item.key, u = k.ur_base, s = k.sr_base;
+  return {{ur_x:u.x_m,ur_y:u.y_m,ur_z:u.z_m,ur_yaw:u.yaw_deg,sr_x:s.x_m,sr_y:s.y_m,sr_z:s.z_m,sr_yaw:s.yaw_deg,sku:k.sku,lift:k.lift_height_m,tote:k.tote_offset_m,stroke:k.sr_j3_stroke_m,clearance:k.clearance_m,corner:k.corner,mode:k.coordination_mode}};
+}}
+function optionLabel(key, value) {{
+  if (["ur_x","ur_y","ur_z","sr_x","sr_y","sr_z","lift","tote","stroke","clearance"].includes(key)) return textValue(value, value === null ? "" : " m");
+  if (["ur_yaw","sr_yaw"].includes(key)) return textValue(value, "°");
+  return String(value);
+}}
+function syncParameterControls(item) {{
+  const values = flattenKey(item);
+  for (const key of parameterKeys) {{
+    const all = [...new Map(catalog.cases.map(c => {{ const v=flattenKey(c)[key]; return [JSON.stringify(v),v]; }})).values()];
+    const select = selects[key]; select.replaceChildren();
+    for (const value of all) {{ const option=document.createElement("option"); option.value=JSON.stringify(value); option.textContent=optionLabel(key,value); select.append(option); }}
+    select.value=JSON.stringify(values[key]);
+  }}
+}}
+function chooseByParameter(changedKey) {{
+  const wanted = JSON.parse(selects[changedKey].value);
+  const current = flattenKey(activeCase);
+  let candidates = catalog.cases.filter(c => Object.is(flattenKey(c)[changedKey], wanted));
+  candidates.sort((a,b) => parameterKeys.reduce((score,key) => score + (Object.is(flattenKey(a)[key], current[key]) ? -1 : 0), 0) - parameterKeys.reduce((score,key) => score + (Object.is(flattenKey(b)[key], current[key]) ? -1 : 0), 0));
+  if (candidates.length) {{ activeCase=candidates[0]; syncParameterControls(activeCase); populateSteps(); submitSelection(); }}
+}}
+function populateSteps() {{
+  stepSelect.replaceChildren();
+  for (const step of activeCase.steps) {{ const o=document.createElement("option"); o.value=String(step.index); o.textContent=`${{step.index}}. ${{step.name}} [${{step.status}}]`; stepSelect.append(o); }}
+  populateChecks();
+}}
+function selectedStep() {{ return activeCase.steps.find(s => s.index === Number(stepSelect.value)); }}
+function populateChecks() {{
+  const step=selectedStep(); checkSelect.replaceChildren();
+  (step?.checks || []).forEach((check,index) => {{ const o=document.createElement("option"); o.value=String(index); o.textContent=`${{check.name}} [${{check.status}}]`; checkSelect.append(o); }});
+  checkSelect.disabled=!step || step.checks.length===0;
+  if (step?.checks?.length) checkSelect.value=String(step.checks.length-1);
+  populateSamples();
+}}
+function populateSamples() {{
+  const step=selectedStep(); const check=step?.checks?.[Number(checkSelect.value)]; sampleSelect.replaceChildren();
+  (check?.samples || []).forEach((sample,index) => {{ const o=document.createElement("option"); o.value=String(index); o.textContent=`${{index+1}} / ${{check.samples.length}} (f=${{sample.fraction.toFixed(3)}})`; sampleSelect.append(o); }});
+  sampleSelect.disabled=!check || check.samples.length===0;
+  if (check?.samples?.length) sampleSelect.value=String(check.samples.length-1);
+}}
+async function submitSelection() {{
+  if (!activeCase) return;
+  const serial = ++requestSerial;
+  const request={{case_id:activeCase.id,step_index:Number(stepSelect.value),check_index:checkSelect.disabled?null:Number(checkSelect.value),sample_index:sampleSelect.disabled?null:Number(sampleSelect.value),ellipsoid_scale:Number(document.getElementById("ellipsoidScale").value),show_ellipsoid:document.getElementById("showEllipsoid").checked}};
+  try {{
+    const response=await fetch("/api/select",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify(request)}});
+    const result=await response.json(); if(!response.ok) throw new Error(result.message || result.error); if(serial!==requestSerial)return;
+    statusNode.dataset.level=result.step_status || "skipped"; statusNode.textContent=result.status_text || JSON.stringify(result,null,2);
+  }} catch(error) {{ if(serial!==requestSerial)return; statusNode.dataset.level="failed"; statusNode.textContent=`UI error: ${{error.message}}`; }}
+}}
+for (const key of parameterKeys) selects[key].addEventListener("change",()=>chooseByParameter(key));
+stepSelect.addEventListener("change",()=>{{populateChecks();submitSelection();}});
+checkSelect.addEventListener("change",()=>{{populateSamples();submitSelection();}});
+sampleSelect.addEventListener("change",submitSelection);
+document.getElementById("ellipsoidScale").addEventListener("change",submitSelection);
+document.getElementById("showEllipsoid").addEventListener("change",submitSelection);
+document.getElementById("previous").addEventListener("click",()=>{{stepSelect.selectedIndex=Math.max(0,stepSelect.selectedIndex-1);populateChecks();submitSelection();}});
+document.getElementById("next").addEventListener("click",()=>{{stepSelect.selectedIndex=Math.min(stepSelect.options.length-1,stepSelect.selectedIndex+1);populateChecks();submitSelection();}});
+fetch("/api/catalog").then(r=>r.json()).then(data=>{{
+  catalog=data;
+  if(!data.cases.length)throw new Error("cache에 case가 없습니다");
+  activeCase=data.cases.find(c=>c.id===data.default_case_id) || data.cases[0];
+  const verified=Number(data.cell_feasible_case_count || 0);
+  cacheSummaryNode.textContent=verified>0 ? `전체 공정 통과 case ${{verified}} / ${{data.case_count}} · 통과 case로 시작` : `전체 공정 통과 case 0 / ${{data.case_count}} · 진단 결과로 시작`;
+  cacheSummaryNode.style.background=verified>0 ? "#193b2a" : "#46391a";
+  cacheSummaryNode.style.color=verified>0 ? "#9de0b9" : "#f2d07a";
+  syncParameterControls(activeCase);populateSteps();submitSelection();
+}}).catch(error=>{{statusNode.dataset.level="failed";statusNode.textContent=error.message;}});
+</script>
+</body>
+</html>
+"""
+
+
+def _validate_meshcat_url(value: str) -> None:
+    parsed = urlsplit(str(value))
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("meshcat_url must be an absolute http(s) URL")
+    try:
+        parsed.port
+    except ValueError as exc:
+        raise ValueError("meshcat_url contains an invalid port") from exc

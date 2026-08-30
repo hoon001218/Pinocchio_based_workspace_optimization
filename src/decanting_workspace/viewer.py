@@ -22,11 +22,7 @@ from .robots import (
     floating_configuration,
     load_robot_bundle,
 )
-from .scene import (
-    SceneSnapshot,
-    cutter_q4_swept_extents,
-    sr_cutting_tcp_footprint_box,
-)
+from .scene import SceneSnapshot, sr_cutting_workspace_footprint_box
 from .transforms import pose_matrix, quaternion_matrix
 
 
@@ -41,11 +37,15 @@ ROLE_STYLE: dict[str, tuple[int, float]] = {
     "pedestal": (0x4D525A, 0.92),
 }
 
+_UR20_SUCTION_PROXY_ROOT = "decanting/robots/ur20/provisional_suction"
+
 
 @dataclass
 class LoadedRobot:
     bundle: RobotBundle
     visualizer: object
+    visual_only: bool = False
+    native_j3_stroke_m: float | None = None
 
 
 class CellViewer:
@@ -56,6 +56,9 @@ class CellViewer:
 
         self.viewer = viewer or meshcat.Visualizer()
         self._robots: list[LoadedRobot] = []
+        self._ur20_suction_attachment: (
+            tuple[RobotBundle, SuctionProxySpec, str] | None
+        ) = None
 
     def render(
         self,
@@ -66,16 +69,18 @@ class CellViewer:
         ur20_package_dirs: Sequence[str | Path] = (),
         sr12ia_urdf: str | Path | None = None,
         sr12ia_package_dirs: Sequence[str | Path] = (),
+        sr12ia_visual_only: bool = False,
         show_collisions: bool = False,
         show_frames: bool = True,
         show_installation_region: bool = True,
-        show_sr_cutting_footprint: bool = True,
+        show_sr_cutting_workspace: bool = True,
         show_sr_footprint_fill: bool = True,
     ) -> None:
         """Clear and render a complete cell state."""
 
         self.viewer.delete()
         self._robots.clear()
+        self._ur20_suction_attachment = None
         self._set_background()
         self._render_floor(spec, snapshot.boxes)
         for box in snapshot.boxes:
@@ -85,8 +90,8 @@ class CellViewer:
         if show_frames:
             for frame in snapshot.frames.values():
                 self._render_frame(frame.name, frame.translation_m, frame.rotation_xyzw)
-        if show_sr_cutting_footprint:
-            self._render_sr_cutting_footprint(
+        if show_sr_cutting_workspace:
+            self._render_sr_cutting_workspace(
                 spec,
                 snapshot.sr_base,
                 snapshot.state.clearance_m,
@@ -109,7 +114,8 @@ class CellViewer:
             load_visual=True,
             cutter_proxy=sr_spec.cutter_proxy,
         )
-        configure_sr_j3_stroke(sr_bundle, snapshot.state.sr_j3_stroke_m)
+        if not sr12ia_visual_only:
+            configure_sr_j3_stroke(sr_bundle, snapshot.state.sr_j3_stroke_m)
         ur_q = self._render_robot(
             ur_bundle,
             snapshot.ur_base,
@@ -125,16 +131,23 @@ class CellViewer:
                 ur_bundle,
                 ur_q,
                 ur_spec.suction_proxy,
-                root_name="decanting/robots/ur20/provisional_suction",
+                root_name=_UR20_SUCTION_PROXY_ROOT,
             )
         sr_q = list(sr_spec.nominal_q)
-        sr_q[2] = min(sr_q[2], snapshot.state.sr_j3_stroke_m)
+        native_sr_stroke = _joint_upper_limit(sr_bundle, "joint3")
+        sr_q[2] = min(
+            sr_q[2],
+            snapshot.state.sr_j3_stroke_m,
+            native_sr_stroke,
+        )
         rendered_sr_q = self._render_robot(
             sr_bundle,
             snapshot.sr_base,
             sr_q,
             root_name="decanting/robots/sr12ia",
             show_collisions=show_collisions,
+            visual_only=sr12ia_visual_only,
+            native_j3_stroke_m=native_sr_stroke,
         )
         if (
             sr_spec.cutter_proxy is not None
@@ -149,6 +162,193 @@ class CellViewer:
 
     def open(self) -> None:
         self.viewer.open()
+
+    def loaded_robot(self, name: str) -> LoadedRobot:
+        """Return one initialized robot visualizer by bundle name."""
+
+        matches = tuple(robot for robot in self._robots if robot.bundle.name == name)
+        if len(matches) != 1:
+            raise KeyError(f"expected one loaded robot named {name!r}, got {len(matches)}")
+        return matches[0]
+
+    def update_ur20_suction_proxy(
+        self,
+        q: Sequence[float] | np.ndarray,
+    ) -> bool:
+        """Move the provisional suction display to the current UR ``tool0``.
+
+        The proxy is intentionally separate from the licensed UR mesh, so a
+        normal ``MeshcatVisualizer.display`` call cannot update it.  Playback
+        invokes this method immediately after every displayed configuration.
+        """
+
+        attachment = self._ur20_suction_attachment
+        if attachment is None:
+            return False
+        bundle, proxy, root_name = attachment
+        configuration = np.asarray(q, dtype=float).reshape(-1)
+        if (
+            configuration.size != bundle.model.nq
+            or not np.all(np.isfinite(configuration))
+        ):
+            raise ValueError(
+                f"UR20 suction update requires {bundle.model.nq} finite values"
+            )
+
+        import pinocchio as pin
+
+        frame_id = bundle.model.getFrameId("tool0")
+        if frame_id >= bundle.model.nframes:
+            raise RuntimeError(f"{bundle.name} has no tool0 frame for the suction proxy")
+        data = bundle.model.createData()
+        pin.forwardKinematics(bundle.model, data, configuration)
+        pin.updateFramePlacements(bundle.model, data)
+        tool_pose = np.asarray(data.oMf[frame_id].homogeneous)
+
+        cylinder_local = pose_matrix(
+            (0.0, 0.0, proxy.cylinder_length_m / 2.0)
+        )
+        cylinder_local[:3, :3] = _rotation_x(math.pi / 2.0)
+        self.viewer[f"{root_name}/cylinder"].set_transform(
+            tool_pose @ cylinder_local
+        )
+
+        pad_local = pose_matrix(
+            (
+                0.0,
+                0.0,
+                proxy.cylinder_length_m + proxy.pad_thickness_m / 2.0,
+            )
+        )
+        pad_local[:3, :3] = _rotation_x(math.pi / 2.0)
+        self.viewer[f"{root_name}/pad"].set_transform(tool_pose @ pad_local)
+        return True
+
+    def update_scene(
+        self,
+        spec: SceneSpec,
+        snapshot: SceneSnapshot,
+        *,
+        show_frames: bool = True,
+        show_sr_cutting_workspace: bool = True,
+        show_sr_footprint_fill: bool = True,
+        suppress_process_objects: bool = False,
+    ) -> None:
+        """Update case-dependent primitives without reloading either robot mesh."""
+
+        self.viewer["decanting/environment"].delete()
+        boxes = tuple(
+            box
+            for box in snapshot.boxes
+            if not (
+                suppress_process_objects
+                and box.role in {"box", "box_sample_alternative", "tote"}
+            )
+        )
+        self._render_floor(spec, boxes)
+        for box in boxes:
+            self._render_box(box)
+
+        self.viewer["decanting/frames"].delete()
+        if show_frames:
+            for frame in snapshot.frames.values():
+                self._render_frame(
+                    frame.name,
+                    frame.translation_m,
+                    frame.rotation_xyzw,
+                )
+
+        self.viewer["decanting/guides/sr12ia/cutting_workspace"].delete()
+        if show_sr_cutting_workspace:
+            self._render_sr_cutting_workspace(
+                spec,
+                snapshot.sr_base,
+                snapshot.state.clearance_m,
+                show_fill=show_sr_footprint_fill,
+            )
+
+    def render_target_pose(
+        self,
+        world_T_target: Sequence[Sequence[float]] | np.ndarray | None,
+        *,
+        successful: bool,
+        axis_length_m: float = 0.18,
+    ) -> None:
+        """Show the selected cached TCP target as three World-oriented axes."""
+
+        root = "decanting/playback/target"
+        self.viewer[root].delete()
+        if world_T_target is None:
+            return
+        matrix = np.asarray(world_T_target, dtype=float)
+        if matrix.shape != (4, 4) or not np.all(np.isfinite(matrix)):
+            raise ValueError("world_T_target must be a finite 4 x 4 matrix")
+        origin = matrix[:3, 3]
+        colors = (
+            (0xD14A3D, 0x3A9B55, 0x3478C5)
+            if successful
+            else (0xC94D44, 0xC94D44, 0xC94D44)
+        )
+        for index, (axis_name, color) in enumerate(zip(("x", "y", "z"), colors)):
+            endpoint = origin + axis_length_m * matrix[:3, index]
+            self._render_line_segments(
+                f"{root}/{axis_name}",
+                np.column_stack((origin, endpoint)),
+                color,
+                opacity=0.98,
+                linewidth=3.0,
+            )
+
+    def render_process_objects(
+        self,
+        objects: Iterable[tuple[str, str, Sequence[float], np.ndarray]],
+    ) -> None:
+        """Replace playback box/tote objects using full World transforms."""
+
+        import meshcat.geometry as geometry
+
+        root = "decanting/playback/objects"
+        self.viewer[root].delete()
+        for name, role, size_m, world_T_object in objects:
+            matrix = np.asarray(world_T_object, dtype=float)
+            size = np.asarray(tuple(size_m), dtype=float).reshape(-1)
+            if matrix.shape != (4, 4) or not np.all(np.isfinite(matrix)):
+                raise ValueError(f"{name} playback transform must be finite 4 x 4")
+            if size.size != 3 or np.any(size <= 0.0) or not np.all(np.isfinite(size)):
+                raise ValueError(f"{name} playback size must contain three positive values")
+            color, opacity = ROLE_STYLE.get(role, (0x777777, 0.80))
+            node = self.viewer[f"{root}/{name}"]
+            node.set_object(
+                geometry.Box(size),
+                geometry.MeshLambertMaterial(
+                    color=color,
+                    transparent=opacity < 1.0,
+                    opacity=opacity,
+                ),
+            )
+            node.set_transform(matrix)
+
+    def render_sr_keepout(self, box: BoxPrimitive | None) -> None:
+        """Show or clear the cached simultaneous-work SR exclusion box."""
+
+        import meshcat.geometry as geometry
+
+        path = "decanting/playback/sr_keepout"
+        self.viewer[path].delete()
+        if box is None:
+            return
+        node = self.viewer[path]
+        node.set_object(
+            geometry.Box(np.asarray(box.size_m, dtype=float)),
+            geometry.MeshLambertMaterial(
+                color=0xD04A44,
+                opacity=0.13,
+                transparent=True,
+            ),
+        )
+        node.set_transform(
+            pose_matrix(box.center_m, yaw_rad=math.radians(box.yaw_deg))
+        )
 
     def url(self) -> str:
         return str(self.viewer.url())
@@ -169,6 +369,8 @@ class CellViewer:
         *,
         root_name: str,
         show_collisions: bool,
+        visual_only: bool = False,
+        native_j3_stroke_m: float | None = None,
     ) -> np.ndarray:
         from pinocchio.visualize import MeshcatVisualizer
 
@@ -188,7 +390,14 @@ class CellViewer:
         visualizer.display(q)
         visualizer.displayVisuals(True)
         visualizer.displayCollisions(show_collisions)
-        self._robots.append(LoadedRobot(bundle=bundle, visualizer=visualizer))
+        self._robots.append(
+            LoadedRobot(
+                bundle=bundle,
+                visualizer=visualizer,
+                visual_only=visual_only,
+                native_j3_stroke_m=native_j3_stroke_m,
+            )
+        )
         return q
 
     def _render_suction_proxy(
@@ -202,15 +411,6 @@ class CellViewer:
         """Render the provisional Isaac suction geometry at the UR ``tool0`` frame."""
 
         import meshcat.geometry as geometry
-        import pinocchio as pin
-
-        frame_id = bundle.model.getFrameId("tool0")
-        if frame_id >= bundle.model.nframes:
-            raise RuntimeError(f"{bundle.name} has no tool0 frame for the suction proxy")
-        data = bundle.model.createData()
-        pin.forwardKinematics(bundle.model, data, q)
-        pin.updateFramePlacements(bundle.model, data)
-        tool_pose = np.asarray(data.oMf[frame_id].homogeneous)
         cylinder_material = geometry.MeshLambertMaterial(color=0x25282B, opacity=0.96)
 
         cylinder = self.viewer[f"{root_name}/cylinder"]
@@ -218,20 +418,14 @@ class CellViewer:
             geometry.Cylinder(proxy.cylinder_length_m, proxy.cylinder_radius_m),
             cylinder_material,
         )
-        cylinder_local = pose_matrix((0.0, 0.0, proxy.cylinder_length_m / 2.0))
-        cylinder_local[:3, :3] = _rotation_x(math.pi / 2.0)
-        cylinder.set_transform(tool_pose @ cylinder_local)
 
         pad = self.viewer[f"{root_name}/pad"]
         pad.set_object(
             geometry.Cylinder(proxy.pad_thickness_m, proxy.pad_radius_m),
             cylinder_material,
         )
-        pad_local = pose_matrix(
-            (0.0, 0.0, proxy.cylinder_length_m + proxy.pad_thickness_m / 2.0)
-        )
-        pad_local[:3, :3] = _rotation_x(math.pi / 2.0)
-        pad.set_transform(tool_pose @ pad_local)
+        self._ur20_suction_attachment = (bundle, proxy, root_name)
+        self.update_ur20_suction_proxy(q)
 
     def _render_cutter_proxy(
         self,
@@ -343,7 +537,7 @@ class CellViewer:
                 linewidth=2.0,
             )
 
-    def _render_sr_cutting_footprint(
+    def _render_sr_cutting_workspace(
         self,
         spec: SceneSpec,
         base: BasePose,
@@ -353,12 +547,12 @@ class CellViewer:
     ) -> None:
         import meshcat.geometry as geometry
 
-        task_box = sr_cutting_tcp_footprint_box(
+        task_box = sr_cutting_workspace_footprint_box(
             spec,
             base,
             clearance_m=state_clearance_m,
         )
-        root = "decanting/guides/sr12ia/cutting_tcp_footprint"
+        root = "decanting/guides/sr12ia/cutting_workspace"
         self._render_line_segments(
             f"{root}/boundary",
             self._oriented_box_edge_segments(task_box),
@@ -381,14 +575,6 @@ class CellViewer:
                     yaw_rad=math.radians(task_box.yaw_deg),
                 )
             )
-
-    @staticmethod
-    def _cutter_swept_extents(
-        proxy: CutterProxySpec,
-    ) -> tuple[float, float, float]:
-        """Backward-compatible access to the cutter collision sweep helper."""
-
-        return cutter_q4_swept_extents(proxy)
 
     @staticmethod
     def _oriented_box_edge_segments(
@@ -455,3 +641,18 @@ def _rotation_x(angle_rad: float) -> np.ndarray:
     c = math.cos(angle_rad)
     s = math.sin(angle_rad)
     return np.array(((1.0, 0.0, 0.0), (0.0, c, -s), (0.0, s, c)))
+
+
+def _joint_upper_limit(bundle: RobotBundle, joint_name: str) -> float:
+    """Return one scalar joint's native upper position limit."""
+
+    joint_id = bundle.model.getJointId(joint_name)
+    if joint_id >= bundle.model.njoints:
+        raise ValueError(f"{bundle.name} has no {joint_name}")
+    joint = bundle.model.joints[joint_id]
+    if joint.nq != 1:
+        raise ValueError(f"{bundle.name} {joint_name} is not one-DOF")
+    value = float(bundle.native_upper_position_limits[joint.idx_q])
+    if not math.isfinite(value) or value <= 0.0:
+        raise ValueError(f"{bundle.name} {joint_name} has no positive upper limit")
+    return value

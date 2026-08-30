@@ -1,0 +1,29 @@
+schema_version: 1
+units: m
+
+# Verified commissioning setup.  The sequential cases pass every HARD task
+# check (steps 1--5 and 8) for all five SKUs and four pallet corners with the
+# official UR20 collision meshes and default 50 mm / 5 degree path sampling.
+ur_base:
+  x_m: [-1.300]
+  y_m: [-7.350]
+  z_m: [0.850]
+  yaw_deg: [90.0]
+
+sr_base:
+  x_m: [-0.300]
+  y_m: [-7.073643684]
+  z_m: [0.665]
+  yaw_deg: [-90.0]
+
+skus: ["123591", "430060", "180043", "049995", "000509"]
+lift_heights_m: [0.200]
+tote_offsets_m: [0.700]
+corners: [southwest, southeast, northwest, northeast]
+# Sequential is intentionally first so it is the opening UI case.  The
+# simultaneous cases remain cached as diagnostics and fail at the conservative
+# SR keep-out during tote handling.
+coordination_modes: [sequential, simultaneous]
+sr_j3_strokes_m: [0.450]
+clearances_m: [null]
+tote_present: true

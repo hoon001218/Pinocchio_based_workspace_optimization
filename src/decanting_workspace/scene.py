@@ -9,7 +9,6 @@ from typing import Mapping
 from .models import (
     BasePose,
     BoxPrimitive,
-    CutterProxySpec,
     FrameSpec,
     SceneSpec,
     SceneState,
@@ -40,13 +39,13 @@ class SceneSnapshot:
         return tuple(box for box in self.boxes if box.collision_enabled)
 
 
-def sr_cutting_tcp_footprint_box(
+def sr_cutting_workspace_footprint_box(
     spec: SceneSpec,
     base: BasePose,
     clearance_m: float | None = None,
     visual_thickness_m: float = 0.008,
 ) -> BoxPrimitive:
-    """Return the SR cutter-TCP cutting footprint on its support cube.
+    """Return the SR cutting-task footprint on its support cube.
 
     This thin guide is the XY box-cutting target domain, not the SCARA arm's
     full swept envelope.  It follows the SR pedestal top and can be inset by a
@@ -54,9 +53,8 @@ def sr_cutting_tcp_footprint_box(
     obtain it from the box top and verify it with J3 limits and collision-aware
     IK.
 
-    Reachability, IK, robot/tool collision geometry, and link sweep remain
-    separate constraints; this footprint does not claim that every point is
-    feasible.
+    Reachability, IK, robot collision geometry, and link sweep remain separate
+    constraints; this footprint does not claim that every point is feasible.
     """
 
     robot = spec.robots["sr12ia"]
@@ -87,7 +85,7 @@ def sr_cutting_tcp_footprint_box(
         base.yaw_rad,
     )
     return BoxPrimitive(
-        name="sr12ia_cutting_tcp_footprint",
+        name="sr12ia_cutting_workspace_footprint",
         role="task_workspace",
         center_m=(center_x, center_y, base.z_m + visual_thickness_m / 2.0),
         size_m=(size_x, size_y, visual_thickness_m),
@@ -96,23 +94,47 @@ def sr_cutting_tcp_footprint_box(
     )
 
 
-def cutter_q4_swept_extents(
-    proxy: CutterProxySpec,
-) -> tuple[float, float, float]:
-    """Return cutter collision geometry extents under a full Q4 rotation.
+def tote_motion_axis_world_xy(spec: SceneSpec) -> tuple[float, float]:
+    """Return the supporting worktable's unit long-axis direction in World XY."""
 
-    These extents are useful for collision checks, but intentionally do not
-    shrink the cutter-TCP cutting domain above the pedestal.
-    """
+    support = _tote_motion_support_box(spec)
+    yaw = math.radians(support.yaw_deg)
+    if support.size_m[0] >= support.size_m[1]:
+        return math.cos(yaw), math.sin(yaw)
+    return -math.sin(yaw), math.cos(yaw)
 
-    cx, cy, cz = proxy.center_local_m
-    sx, sy, sz = proxy.size_m
-    horizontal_radius = max(
-        math.hypot(cx + sign_x * sx / 2.0, cy + sign_y * sy / 2.0)
-        for sign_x in (-1.0, 1.0)
-        for sign_y in (-1.0, 1.0)
+
+def tote_long_axis_offset_range_m(spec: SceneSpec) -> tuple[float, float]:
+    """Return offsets that keep the rotated tote within the table's long edges."""
+
+    support = _tote_motion_support_box(spec)
+    tote = spec.tote
+    frame = spec.frames[tote.representative_frame]
+    support_yaw = math.radians(support.yaw_deg)
+    c = math.cos(support_yaw)
+    s = math.sin(support_yaw)
+    dx = frame.translation_m[0] - support.center_m[0]
+    dy = frame.translation_m[1] - support.center_m[1]
+    frame_local = (c * dx + s * dy, -s * dx + c * dy)
+    long_axis_index = 0 if support.size_m[0] >= support.size_m[1] else 1
+
+    relative_yaw = math.radians(tote.representative_yaw_deg - support.yaw_deg)
+    if long_axis_index == 0:
+        tote_half_extent = (
+            abs(math.cos(relative_yaw)) * tote.size_m[0] / 2.0
+            + abs(math.sin(relative_yaw)) * tote.size_m[1] / 2.0
+        )
+    else:
+        tote_half_extent = (
+            abs(math.sin(relative_yaw)) * tote.size_m[0] / 2.0
+            + abs(math.cos(relative_yaw)) * tote.size_m[1] / 2.0
+        )
+    support_half_extent = support.size_m[long_axis_index] / 2.0
+    initial_coordinate = frame_local[long_axis_index]
+    return (
+        -support_half_extent + tote_half_extent - initial_coordinate,
+        support_half_extent - tote_half_extent - initial_coordinate,
     )
-    return horizontal_radius, cz - sz / 2.0, cz + sz / 2.0
 
 
 def materialize_scene(
@@ -129,11 +151,12 @@ def materialize_scene(
     ur = ur_base or spec.robots["ur20"].nominal_base
     sr = sr_base or spec.robots["sr12ia"].nominal_base
     _validate_state(spec, scenario)
+    frames = _scenario_frames(spec, scenario)
 
     boxes: list[BoxPrimitive] = list(spec.static_boxes)
     boxes.extend(_pallet_and_samples(spec, scenario))
     if scenario.tote_present:
-        boxes.append(_representative_tote(spec))
+        boxes.append(_representative_tote(spec, frames))
     boxes.append(_pedestal_box("ur20_pedestal", ur, spec.robots["ur20"].pedestal))
     boxes.append(_pedestal_box("sr12ia_pedestal", sr, spec.robots["sr12ia"].pedestal))
 
@@ -159,7 +182,7 @@ def materialize_scene(
 
     return SceneSnapshot(
         boxes=tuple(boxes),
-        frames=spec.frames,
+        frames=frames,
         ur_base=ur,
         sr_base=sr,
         state=scenario,
@@ -206,9 +229,12 @@ def _pallet_and_samples(spec: SceneSpec, state: SceneState) -> list[BoxPrimitive
     return result
 
 
-def _representative_tote(spec: SceneSpec) -> BoxPrimitive:
+def _representative_tote(
+    spec: SceneSpec,
+    frames: Mapping[str, FrameSpec],
+) -> BoxPrimitive:
     tote = spec.tote
-    frame = spec.frames[tote.representative_frame]
+    frame = frames[tote.representative_frame]
     return BoxPrimitive(
         name="representative_tote",
         role="tote",
@@ -218,7 +244,42 @@ def _representative_tote(spec: SceneSpec) -> BoxPrimitive:
             tote.support_surface_z_m + tote.size_m[2] / 2.0,
         ),
         size_m=tote.size_m,
+        yaw_deg=tote.representative_yaw_deg,
     )
+
+
+def _scenario_frames(
+    spec: SceneSpec,
+    state: SceneState,
+) -> Mapping[str, FrameSpec]:
+    frames = dict(spec.frames)
+    tote = spec.tote
+    source = frames[tote.representative_frame]
+    axis_x, axis_y = tote_motion_axis_world_xy(spec)
+    offset = state.tote_long_axis_offset_m
+    frames[tote.representative_frame] = FrameSpec(
+        name=source.name,
+        translation_m=(
+            source.translation_m[0] + offset * axis_x,
+            source.translation_m[1] + offset * axis_y,
+            source.translation_m[2],
+        ),
+        rotation_xyzw=source.rotation_xyzw,
+    )
+    return frames
+
+
+def _tote_motion_support_box(spec: SceneSpec) -> BoxPrimitive:
+    try:
+        return next(
+            box
+            for box in spec.static_boxes
+            if box.name == spec.tote.motion_support_box
+        )
+    except StopIteration as exc:
+        raise ValueError(
+            f"unknown tote motion support box: {spec.tote.motion_support_box}"
+        ) from exc
 
 
 def _pedestal_box(name: str, base: BasePose, pedestal: object) -> BoxPrimitive:
@@ -258,3 +319,14 @@ def _validate_state(spec: SceneSpec, state: SceneState) -> None:
         not math.isfinite(state.clearance_m) or state.clearance_m < 0.0
     ):
         raise ValueError("clearance must be finite and non-negative")
+    tote_offset = state.tote_long_axis_offset_m
+    tote_low, tote_high = tote_long_axis_offset_range_m(spec)
+    if (
+        not math.isfinite(tote_offset)
+        or tote_offset < tote_low - 1e-12
+        or tote_offset > tote_high + 1e-12
+    ):
+        raise ValueError(
+            "tote long-axis offset must be in "
+            f"[{tote_low}, {tote_high}] m"
+        )

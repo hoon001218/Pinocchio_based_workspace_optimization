@@ -45,6 +45,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--sr-j3-stroke-mm", type=float, choices=(300.0, 450.0), default=300.0)
     parser.add_argument("--clearance-mm", type=float)
+    parser.add_argument(
+        "--tote-table-offset-mm",
+        type=float,
+        default=0.0,
+        help=(
+            "Move the representative tote and its frame together along the "
+            "supporting worktable's long axis."
+        ),
+    )
     parser.add_argument("--no-tote", action="store_true")
     parser.add_argument(
         "--sr-module-camera-mode",
@@ -76,11 +85,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--hide-frames", action="store_true")
     parser.add_argument("--hide-installation-region", action="store_true")
     parser.add_argument(
+        "--hide-sr-cutting-workspace",
         "--hide-sr-cutting-footprint",
         "--hide-sr-workspace",
-        dest="hide_sr_cutting_footprint",
+        dest="hide_sr_cutting_workspace",
         action="store_true",
-        help="Hide the cutter-TCP task footprint on the SR support cube.",
+        help="Hide the SR tool0 task footprint on the support cube.",
     )
     parser.add_argument(
         "--hide-sr-cutting-footprint-fill",
@@ -113,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
             sku=str(args.sku),
             corner_samples=corners,
             tote_present=not args.no_tote,
+            tote_long_axis_offset_m=args.tote_table_offset_mm / 1000.0,
             sr_j3_stroke_m=args.sr_j3_stroke_mm / 1000.0,
             clearance_m=None if args.clearance_mm is None else args.clearance_mm / 1000.0,
         )
@@ -201,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
             show_collisions=args.show_collisions,
             show_frames=not args.hide_frames,
             show_installation_region=not args.hide_installation_region,
-            show_sr_cutting_footprint=not args.hide_sr_cutting_footprint,
+            show_sr_cutting_workspace=not args.hide_sr_cutting_workspace,
             show_sr_footprint_fill=not args.hide_sr_footprint_fill,
         )
 

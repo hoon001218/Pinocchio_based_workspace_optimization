@@ -10,6 +10,7 @@ import pytest
 
 from decanting_workspace import load_scene_spec
 from decanting_workspace.models import CutterProxySpec
+from decanting_workspace.playback_backend import _validate_sr_display_contract
 from decanting_workspace.robots import (
     OFFICIAL_UR20_COMMIT,
     attach_cutter_proxy,
@@ -93,30 +94,22 @@ def test_cutter_proxy_is_attached_to_tool0(ur20_urdf: Path) -> None:
         attach_cutter_proxy(bundle, proxy)
 
 
-def test_configured_tool_tcp_frames_are_added() -> None:
+def test_only_configured_scene_tool_tcp_frames_are_added() -> None:
     spec = load_scene_spec()
     ur = load_robot_bundle(
         "ur20",
         spec.robots["ur20"].urdf_path,
         suction_proxy=spec.robots["ur20"].suction_proxy,
     )
-    sr = load_robot_bundle(
-        "sr12ia",
-        spec.robots["sr12ia"].urdf_path,
-        cutter_proxy=spec.robots["sr12ia"].cutter_proxy,
-    )
+    sr = load_robot_bundle("sr12ia", spec.robots["sr12ia"].urdf_path)
 
-    for bundle, frame_name, expected_translation in (
-        (ur, "suction_tcp", (0.0, 0.0, 0.224)),
-        (sr, "cutter_tcp", (0.220, 0.0, -0.110)),
-    ):
-        tool_id = bundle.model.getFrameId("tool0")
-        tcp_id = bundle.model.getFrameId(frame_name)
-        assert tcp_id < bundle.model.nframes
-        expected = bundle.model.frames[tool_id].placement.act(
-            np.asarray(expected_translation)
-        )
-        assert np.allclose(bundle.model.frames[tcp_id].placement.translation, expected)
+    tool_id = ur.model.getFrameId("tool0")
+    tcp_id = ur.model.getFrameId("suction_tcp")
+    assert tcp_id < ur.model.nframes
+    expected = ur.model.frames[tool_id].placement.act(np.array((0.0, 0.0, 0.224)))
+    assert np.allclose(ur.model.frames[tcp_id].placement.translation, expected)
+    assert not sr.model.existFrame("cutter_tcp")
+    assert not sr.model.existFrame("cutter_proxy")
 
 
 def test_sr_j3_limit_is_restricted_by_selected_option() -> None:
@@ -129,6 +122,26 @@ def test_sr_j3_limit_is_restricted_by_selected_option() -> None:
     assert sr.model.upperPositionLimit[joint.idx_q] == pytest.approx(0.3)
     configure_sr_j3_stroke(sr, 0.45)
     assert sr.model.upperPositionLimit[joint.idx_q] == pytest.approx(0.45)
+
+
+def test_display_only_sr_requires_the_same_joint_and_tool0_contract() -> None:
+    spec = load_scene_spec()
+    evaluation = load_robot_bundle(
+        "sr_evaluation",
+        spec.robots["sr12ia"].urdf_path,
+    )
+    compatible_visual = load_robot_bundle(
+        "sr_visual",
+        spec.robots["sr12ia"].urdf_path,
+    )
+    incompatible_visual = load_robot_bundle(
+        "ur_visual",
+        spec.robots["ur20"].urdf_path,
+    )
+
+    _validate_sr_display_contract(evaluation, compatible_visual)
+    with pytest.raises(ValueError, match="joint contract differs"):
+        _validate_sr_display_contract(evaluation, incompatible_visual)
 
 
 def test_official_resolver_pins_commit_and_scopes_cache(
