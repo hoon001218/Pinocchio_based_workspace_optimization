@@ -2,10 +2,11 @@
 
 Python-only scene, task, and robot-model foundation for the decanting-cell base-placement study. The runtime is independent of Isaac Sim and ROS/MoveIt: one validated `SceneSnapshot` feeds Pinocchio FK/IK/Jacobians, Coal collision checks, conservative SR task-workspace screening, and the reusable base-candidate evaluator.
 
-For continuation work, read [the code architecture](docs/ARCHITECTURE.md) and
-[the project handoff](docs/HANDOFF.md). The handoff records confirmed process
-requirements, current results, unresolved decisions, and the fresh-machine
-checklist.
+For continuation work, read [the code architecture](docs/ARCHITECTURE.md),
+[the project handoff](docs/HANDOFF.md), and the Korean
+[run-command guide](docs/RUN_COMMANDS.md). The handoff records confirmed
+process requirements, current results, unresolved decisions, and the
+fresh-machine checklist.
 
 Implemented in this stage:
 
