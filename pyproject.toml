@@ -27,6 +27,7 @@ decanting-assets = "decanting_workspace.asset_prep:main"
 decanting-evaluate = "decanting_workspace.candidate_cli:main"
 decanting-precompute = "decanting_workspace.precompute_cli:main"
 decanting-playback = "decanting_workspace.playback_cli:main"
+decanting-live = "decanting_workspace.live_cli:main"
 decanting-setup = "decanting_workspace.setup_cli:main"
 
 [tool.setuptools]

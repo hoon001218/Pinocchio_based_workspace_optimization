@@ -41,8 +41,13 @@ Isaac Sim, ROS, MoveIt은 실행 의존성이 아니다. `cu_usd_simplified.usd`
 
 - 후보 반복 중에는 visual mesh를 로드하지 않는다.
 - UR20과 SR-12iA `RobotBundle`은 반복문 바깥에서 한 번 로드해 재사용한다.
-- MeshCat은 저장된 결과를 검토하는 계층이며, cache replay 중 IK를 다시 풀지 않는다.
-- evaluation model과 display-only model을 구분한다. 특히 SR mesh 시각화가 cache의 kinematic/collision 판정을 바꾸지 않는다.
+- cache playback의 MeshCat 계층은 저장된 결과만 검토하며 IK를 다시 풀지
+  않는다.
+- 별도 live 계층은 입력 한 세트를 local Python backend에서 계산한 뒤 최신
+  결과 하나만 메모리에 보관해 같은 step/check/sample presenter로 표시한다.
+- evaluation model과 display-only model을 구분한다. 특히 준비된 FANUC SR
+  mesh는 표시 전용이며 cache와 live의 kinematic/collision 판정을 바꾸지
+  않는다.
 
 ### 불변 데이터 우선
 
@@ -63,10 +68,12 @@ Isaac Sim, ROS, MoveIt은 실행 의존성이 아니다. `cu_usd_simplified.usd`
 | `.cache/robot_assets/sr12ia/` | 각 PC가 라이선스 동의 후 생성하는 SR mesh bundle; Git 미포함 |
 | `src/decanting_workspace/` | scene, kinematics, evaluation, cache, UI 구현 |
 | `outputs/` | 재현 가능한 report와 precomputed cache snapshot |
-| `tests/` | config부터 UI playback까지 계층별 계약 테스트 |
+| `tests/` | config부터 cache playback/live UI까지 계층별 계약 테스트 |
 | `BGF/` | 선택적으로 초기화하는 상위 프로젝트 reference submodule; runtime 불필요 |
 
-`.cache/README.md` 외의 `.cache` 내용, `.venv`, `.pytest_cache`는 로컬에서 다시 만들 수 있는 상태다. 어떤 runtime-required source도 원래 개발 PC의 절대 경로를 요구해서는 안 된다.
+`.cache/README.md` 외의 `.cache` 내용, Miniconda의 named environment,
+`.pytest_cache`는 로컬에서 다시 만들 수 있는 상태다. 어떤 runtime-required
+source도 원래 개발 PC의 절대 경로를 요구해서는 안 된다.
 
 ### 3.1 Python module map
 
@@ -94,8 +101,11 @@ Isaac Sim, ROS, MoveIt은 실행 의존성이 아니다. `cu_usd_simplified.usd`
 | `meshcat_playback.py` | cached q와 ellipsoid 표시 |
 | `playback_controller.py` | exact case/step/check/sample 선택 |
 | `playback_backend.py` | cache selection과 scene/viewer 연결, display model 계약 검증 |
-| `meshcat_ui.py` | local HTTP control page |
-| `playback_cli.py` | portable cache 검증과 live playback server entry point |
+| `meshcat_ui.py` | 직렬화된 local HTTP catalog/select/evaluate server, Windows control-port 배타 바인딩 |
+| `playback_cli.py` | portable cache 검증과 immutable playback server entry point |
+| `live_backend.py` | 단일 parameter evaluation, in-memory one-case adapter, profile 계약 |
+| `live_ui.py` | schema 기반 15개 parameter control, 계산 요약, 500 ms latest-only browser queue |
+| `live_cli.py` | on-demand evaluation bundle/viewer/server entry point와 control/viewer URL 역할 안내 |
 | `cli.py` | cache와 무관한 단일 scene 시각화 entry point |
 
 ## 4. 전체 데이터 흐름
@@ -120,6 +130,9 @@ flowchart TD
     M --> O["portable precomputed cache"]
     O --> P["exact cached selection"]
     P --> Q["MeshCat robot pose + collision + ellipsoid"]
+    U["live UI parameter set + profile"] --> V["serialized one-case evaluation"]
+    V --> W["latest in-memory case"]
+    W --> P
 ```
 
 ### 4.1 설정과 scene materialization
@@ -256,7 +269,7 @@ prepared mesh는 300 mm J3 visual model이다. 450 mm feasibility는 conservativ
 
 SR cache가 없을 때 계산은 tracked approximate model로 가능하지만 실제 mesh 검토는 준비가 끝날 때까지 불가능하다. `decanting-setup`은 기본적으로 기존 bundle과 model/config/cache 계약을 검사하며, bundle이 없다면 명확히 실패한다. 자동 준비는 라이선스 동의 flag가 있을 때만 수행한다.
 
-## 6. Precompute cache와 playback
+## 6. Precompute cache, playback, live evaluation
 
 `precompute.py`는 YAML에 명시된 유한 Cartesian product만 계산한다. `CaseKey`와 stable ID는 loop index가 아니라 실제 base/state 물리값으로 구성된다.
 
@@ -296,6 +309,81 @@ Cache에는 UI 재생에 필요한 다음 정보가 들어 있다.
 
 Robot mesh는 UI 시작 시 한 번만 로드된다. 실패한 IK sample은 diagnostic configuration과 target frame을 표시할 수 있지만 feasible pose로 취급하지 않으며 ellipsoid를 숨긴다. Step 6은 이전 성공 자세를 유지하면서 pose check가 없음을 표시한다.
 
+### 6.1 On-demand live evaluation
+
+`live_cli.py`는 config와 `--initial-grid`를 읽지만 grid의 첫 `CaseKey`는 UI
+초기값으로만 사용한다. UR20/SR evaluation `RobotBundle`과 display model을
+startup에서 한 번 로드한 뒤 `LiveEvaluationBackend`에 전달한다. 기존
+precomputed cache를 읽지 않고 새 cache 파일도 쓰지 않는다.
+
+한 live request의 흐름은 다음과 같다.
+
+1. UI의 flat parameter mapping을 검증해 `BasePose`, `SceneState`, 단일 corner와
+   coordination mode의 `CaseKey`를 만든다.
+2. 정확히 한 case인 `CaseGrid`로 기존 `precompute_cases`/candidate evaluator를
+   호출한다.
+3. 결과를 메모리의 one-case `PrecomputedCache` 형태로 변환해 검증된
+   `CachedPlaybackBackend`와 presenter를 재사용한다.
+4. 최신 backend와 stable case ID만 보관한다. 이후 step/check/sample 선택은
+   이 결과를 재생하며 다시 평가하지 않는다.
+
+브라우저 초기화 계약은 `GET /api/catalog` → profile 생성 → parameter control
+생성 → 최초 `/api/evaluate` 순서다. Catalog는 다음 15개 입력을 flat schema와
+초기값으로 제공한다.
+
+- UR20/SR-12iA 각각의 `x`, `y`, `z`, `yaw`
+- SKU, lift height, tote offset, clearance
+- pallet corner, coordination mode, SR J3 stroke
+
+숫자 항목마다 range와 number input을 한 쌍으로 만들고, choice 항목은 catalog의
+허용값만 select로 만든다. 최초 평가가 끝나면 별도 `Calculated result` 영역에
+evaluation ID/profile, `cell_feasible`, `installation_valid`,
+`scenario_hard_feasible`, `sr_workspace_feasible`, case status를 표시한다. 그
+아래 step/check/sample status는 선택한 세부 자세의 결과이므로 case 전체 요약과
+구분한다.
+
+숫자 입력 두 개를 구성하는 JavaScript 반복 대상은 실제 배열이어야 한다.
+괄호식은 JavaScript comma operator로 평가되어 첫 control에서 초기화를
+중단시키므로, UI 회귀 테스트는 `[slider, number]` 반복 계약과 최초 evaluate
+호출 경로의 정적 계약을 함께 고정한다.
+
+이 adapter에서 cache dataclass를 쓰는 것은 기존 hierarchy/presentation 계약을
+재사용하기 위한 메모리 표현일 뿐 persistence가 아니다. 응답도
+`persisted=false`이며 `outputs/`에 artifact를 생성하지 않는다. 재현 가능한
+다중 case 결과가 필요하면 명시적인 YAML grid와 `decanting-precompute`를
+사용해야 한다.
+
+profile은 평가 정확도의 전역 보장이 아니라 local sampling 정책이다.
+
+- `quick`: fixed `10 m` translation, `180°` rotation, joint interior sample 0.
+  endpoint-oriented 반응형 진단이며 continuous collision-free path를 보장하지
+  않는다.
+- `full`: CLI 설정을 따르며 기본 `50 mm`, `5°`, joint interior sample 3이다.
+  더 촘촘한 local Cartesian/joint-segment diagnostic이지만 station 사이의 전역
+  motion planner가 아니고 전역 path 존재를 증명하지 않는다.
+
+브라우저는 parameter/profile 변경을 500 ms debounce한다. evaluation 한 건이
+실행 중이면 중간 변경을 쌓지 않고 최신 한 세트만 다음 실행으로 남긴다.
+HTTP server의 단일 lock은 `/api/evaluate`와 `/api/select`를 함께 직렬화한다.
+이는 UI 편의만이 아니라 `configure_sr_j3_stroke`의 mutable joint limit와
+non-thread-safe collision state를 보호하는 계산 계약이다.
+
+Control page와 MeshCat viewer는 서로 다른 HTTP endpoint다. 기본 control URL은
+`http://127.0.0.1:8766/`이고, MeshCat `/static/` URL은 control page의 iframe에
+들어가는 3-D viewer 전용이라 parameter/result UI가 없다. Live CLI는 raw
+MeshCat의 기본 안내 출력을 숨기고 두 URL의 역할을 명시하며, root/catalog/API
+응답에는 `Cache-Control: no-store`를 사용한다. Windows에서는 control socket에
+exclusive bind를 적용해 이전 process와 새 process가 같은 port에서 서로 다른
+HTML을 비결정적으로 제공하지 못하게 한다. 이전 process가 남아 있으면 새
+실행은 address-in-use 오류로 실패해야 한다.
+
+live에서도 평가와 표시는 분리된다. official UR20은 기본적으로 양쪽에 같은
+model을 쓰지만, 준비된 FANUC/Isaac SR mesh는 display-only native 300 mm
+model이다. 300/450 mm feasibility와 keepout은 기본
+`assets/robots/sr12ia/sr12ia_approx.urdf` 또는 `--sr12ia-urdf`로 제공한 평가
+proxy가 계산한다. `--sr12ia-visual-urdf`는 그 판정을 바꾸지 않는다. native
+300 mm를 넘는 visual posture는 clamp하지 않고 presentation error로 거부한다.
+
 ## 7. Version 변경 규칙
 
 - task step, check, target, criticality, contact 계약 변경: `WORKFLOW_SCHEMA_VERSION`을 올리고 cache/report를 재생성한다.
@@ -303,13 +391,20 @@ Robot mesh는 UI 시작 시 한 번만 로드된다. 실패한 IK sample은 diag
 - scene/frame/grid 구조 변경: 각 schema version과 loader test를 갱신한다.
 - evaluation URDF 또는 config 값 변경: schema가 같아도 fingerprint가 달라지므로 cache를 재생성한다.
 - viewer 색상이나 UI-only layout 변경: 계산 계약이 변하지 않으면 workflow/cache version을 올리지 않는다.
+- live request/profile/UI queue만 변경하고 serialized cache 해석이 그대로라면
+  `CACHE_SCHEMA_VERSION`을 올리거나 tracked cache를 재생성하지 않는다. 단,
+  공통 workflow/evaluation 계약을 바꾸면 기존 version 규칙을 그대로 따른다.
 
 ## 8. 병렬 최적화 시 주의사항
 
-현재 precompute는 순차 실행을 기준으로 안전하다. 향후 후보를 병렬 평가할 때는 다음 소유권을 지켜야 한다.
+현재 precompute는 순차 실행을 기준으로 안전하다. live server도 모든 evaluate
+및 select 요청을 직렬화한다. 향후 후보를 병렬 평가할 때는 다음 소유권을
+지켜야 한다.
 
 - `PinocchioCollisionChecker`는 thread-safe가 아니므로 phase/worker별로 생성한다.
 - `configure_sr_j3_stroke`는 `RobotBundle`의 joint limit를 변경한다. 서로 다른 J3 option을 병렬 처리할 때 shared SR bundle을 사용하지 말고 worker별 bundle을 둔다.
+- live UI의 500 ms latest-only queue와 server lock을 제거한 채 shared bundle로
+  evaluate를 병렬 호출하면 안 된다.
 - viewer와 HTTP server는 optimizer worker에 넣지 않는다.
 - mesh load, config parse, immutable grid 생성은 가능한 한 worker loop 바깥에서 수행한다.
 
@@ -326,6 +421,7 @@ Robot mesh는 UI 시작 시 한 번만 로드된다. 실패한 IK sample은 diag
 | metric 정의 | `kinematics.py`, `evaluation.py` | cache schema 또는 metric parser 필요 여부 |
 | SR 보수 영역 | `scene.py`, `scara_workspace.py`, `collision.py` | SR tests, simultaneous cases |
 | asset bootstrap/검증 | `asset_prep.py`, setup CLI | clean-clone/relative-path tests |
-| UI 선택/표시 | playback 및 MeshCat modules | controller/backend/UI tests |
+| cache UI 선택/표시 | playback 및 MeshCat modules | controller/backend/UI tests |
+| live parameter/profile/직렬화 | `live_backend.py`, `live_ui.py`, `live_cli.py` | live backend/UI/CLI tests |
 
 최적화 계층은 `evaluate_base_candidate` 또는 동일 계약을 가진 adapter를 반복 호출하고 `CoordinationSummary`, `ScenarioEvaluation`, `MetricSummary`의 raw 값을 소비해야 한다. 기존 계산 계층 안에 특정 optimizer의 가중치나 ranking을 넣지 않는 것이 현재의 경계다.

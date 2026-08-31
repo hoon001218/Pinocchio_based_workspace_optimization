@@ -355,7 +355,7 @@ def test_synthetic_usda_exports_eight_objs_urdf_and_provenance(tmp_path):
     assert provenance["source_sha256"] == hashlib.sha256(source.read_bytes()).hexdigest()
     assert provenance["isaac_sim_version"] == "6.0"
     assert provenance["nvidia_asset_url"].endswith(
-        "/Isaac/Robots/Fanuc/sr12ia/payloads/geometries.usd"
+        "/Isaac/Robots_Multiphysics/Fanuc/sr12ia/payloads/geometries.usd"
     )
     assert (
         provenance["nvidia_asset_sha256"]

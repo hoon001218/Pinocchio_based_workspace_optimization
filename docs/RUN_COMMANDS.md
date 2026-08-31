@@ -62,13 +62,13 @@ PowerShell을 다시 연다.
 ### 1.3 단일 Python 환경 생성 및 패키지 설치
 
 ```powershell
-conda env create --prefix .\.venv --file environment.yml
-conda run --prefix .\.venv python -m pip install -e . --no-deps --no-build-isolation
+conda env create -n pinocchio-workspace --file environment.yml
+conda run -n pinocchio-workspace python -m pip install -e . --no-deps --no-build-isolation
 ```
 
 프로젝트는 Pixi를 사용하지 않는다. Windows에서는 Conda DLL 경로가 빠질
-수 있으므로 `.\.venv\python.exe`를 직접 실행하지 말고 `conda activate` 또는
-`conda run --prefix`를 사용한다.
+수 있으므로 named environment를 활성화하거나
+`conda run -n pinocchio-workspace`를 사용한다.
 
 저장소 경로에 한글이 포함된 Windows 환경에서는 다음 설정을 현재 shell에
 적용하는 것이 안전하다.
@@ -86,14 +86,14 @@ NVIDIA에 고정된 원본을 받아 SHA-256을 검증하고 변환하려면 라
 후 다음 명령을 실행한다.
 
 ```powershell
-conda run --prefix .\.venv decanting-setup --accept-fanuc-license
+conda run -n pinocchio-workspace decanting-setup --accept-fanuc-license
 ```
 
 이미 허가된 `geometries.usd` 파일이 있다면 다운로드 대신 로컬 파일을
 사용한다.
 
 ```powershell
-conda run --prefix .\.venv decanting-setup `
+conda run -n pinocchio-workspace decanting-setup `
   --sr12ia-usd "C:\path\to\Fanuc\sr12ia\payloads\geometries.usd"
 ```
 
@@ -101,13 +101,13 @@ conda run --prefix .\.venv decanting-setup `
 검사하는 doctor 명령은 다음과 같다.
 
 ```powershell
-conda run --prefix .\.venv decanting-setup
+conda run -n pinocchio-workspace decanting-setup
 ```
 
 SR-12iA bundle을 강제로 다시 생성해야 할 때만 `--refresh-sr12ia`를 붙인다.
 
 ```powershell
-conda run --prefix .\.venv decanting-setup `
+conda run -n pinocchio-workspace decanting-setup `
   --accept-fanuc-license `
   --refresh-sr12ia
 ```
@@ -120,23 +120,24 @@ conda run --prefix .\.venv decanting-setup `
 전체 자동 테스트:
 
 ```powershell
-conda run --prefix .\.venv python -m pytest
+conda run -n pinocchio-workspace python -m pytest
 ```
 
 설치 상태와 tracked cache를 함께 검사:
 
 ```powershell
-conda run --prefix .\.venv decanting-setup
+conda run -n pinocchio-workspace decanting-setup
 ```
 
 각 CLI의 현재 옵션을 확인하려면 다음을 사용한다.
 
 ```powershell
-conda run --prefix .\.venv decanting-setup --help
-conda run --prefix .\.venv decanting-view --help
-conda run --prefix .\.venv decanting-evaluate --help
-conda run --prefix .\.venv decanting-precompute --help
-conda run --prefix .\.venv decanting-playback --help
+conda run -n pinocchio-workspace decanting-setup --help
+conda run -n pinocchio-workspace decanting-view --help
+conda run -n pinocchio-workspace decanting-evaluate --help
+conda run -n pinocchio-workspace decanting-precompute --help
+conda run -n pinocchio-workspace decanting-playback --help
+conda run -n pinocchio-workspace decanting-live --help
 ```
 
 ## 4. MeshCat 실행
@@ -147,7 +148,7 @@ conda run --prefix .\.venv decanting-playback --help
 cache인 `outputs/precomputed_working_cases.json.gz`다.
 
 ```powershell
-conda run --prefix .\.venv decanting-playback --open
+conda run -n pinocchio-workspace decanting-playback --open
 ```
 
 UI에서 SKU, pallet corner, 동시/순차 모드, 공정 단계, 세부 check와 sample을
@@ -164,7 +165,7 @@ lift, tote offset, J3가 각각 한 값뿐이다. 이 축의 slider가 비활성
 720-case nominal 진단 cache를 열려면 파일을 명시한다.
 
 ```powershell
-conda run --prefix .\.venv decanting-playback `
+conda run -n pinocchio-workspace decanting-playback `
   --cache outputs\precomputed_nominal_cases.json.gz `
   --open
 ```
@@ -172,7 +173,7 @@ conda run --prefix .\.venv decanting-playback `
 충돌 형상도 함께 표시:
 
 ```powershell
-conda run --prefix .\.venv decanting-playback `
+conda run -n pinocchio-workspace decanting-playback `
   --show-collisions `
   --open
 ```
@@ -181,23 +182,103 @@ SR mesh가 준비되지 않은 PC에서 임시 근사 형상을 명시적으로 
 다음을 사용한다. 실제 형상 검토용 명령은 아니다.
 
 ```powershell
-conda run --prefix .\.venv decanting-playback `
+conda run -n pinocchio-workspace decanting-playback `
   --allow-sr-visual-fallback `
   --open
 ```
 
-### 4.2 환경 및 nominal robot pose만 확인
+### 4.2 파라미터를 즉시 계산하는 live UI
+
+사전 계산 cache와 별개로, 현재 입력한 파라미터 한 세트를 Pinocchio로 계산해
+바로 표시하려면 다음을 실행한다.
+
+```powershell
+conda run --no-capture-output -n pinocchio-workspace decanting-live --open
+```
+
+터미널의 `LIVE CONTROL UI (parameters + calculated results)` 주소(기본
+`http://127.0.0.1:8766/`)를 연다. 별도로 표시되는 MeshCat `/static/` 주소는
+iframe에 들어가는 3-D viewer 전용이므로 파라미터 입력과 계산 결과가 없다.
+코드를 갱신한 뒤에는 실행 중인 기존 `decanting-live`를 `Ctrl+C`로 종료하고
+새 process를 시작해야 한다. 같은 control port의 이전 process가 남아 있으면
+새 실행은 오래된 UI를 섞어 제공하지 않고 address-in-use 오류로 중단된다.
+
+`decanting-live`는 `--initial-grid`의 첫 exact key를 UI 초기값으로만 사용한다.
+기본값은 `config/case_grid_working.yaml`이며, 이 YAML이나 기존
+`outputs/*.json.gz`를 계산 결과로 읽는 것이 아니다. 각 계산은 메모리 내
+단일 case로 유지되고 파일로 저장되지 않는다. 계산이 끝난 뒤 step, check,
+sample을 바꾸는 동작은 최신 메모리 결과를 재생하며 IK를 다시 풀지 않는다.
+
+정상적으로 열린 live panel에는 다음 15개 parameter가 보인다.
+
+- UR20: X, Y, Z, yaw
+- SR-12iA: X, Y, Z, yaw
+- SKU, lift height, tote offset, clearance
+- pallet corner, coordination mode, SR J3 stroke
+
+페이지를 열면 기본 `quick` 계산이 자동 시작된다. 완료 후 `Calculated result`
+상자에 evaluation 번호/profile, `Cell feasible`, `Installation valid`, `Hard
+task checks`, `SR workspace`, case status가 표시된다. Task pose의 step/check/
+sample 결과는 이 case 전체 요약과 별도로 아래 status 상자에 표시된다.
+
+UI의 **Auto calculate**는 기본으로 켜져 있다. 연속 slider, 숫자 입력, choice를
+바꾸면 500 ms debounce 후 계산한다. 계산은 항상 한 번에 하나씩 직렬로
+실행하며, 계산 중 여러 번 바꾼 값은 최신 한 세트만 이어서 다시 계산한다.
+여러 값을 먼저 조정하려면 Auto calculate를 끄고 **Calculate now**를 누른다.
+
+profile 의미는 다음과 같다.
+
+- `quick`: 기본값. `10 m`, `180°`, joint interior sample 0의 끝점 중심 진단이다.
+  빠른 반응을 위한 것이며 연속 collision-free path를 보장하지 않는다.
+- `full`: 기본 `50 mm`, `5°`, joint interior sample 3으로 더 촘촘하게 로컬
+  Cartesian/joint segment를 검사한다. station 사이 전역 경로계획은 아니며
+  전역 경로 존재를 보장하지 않는다.
+
+처음부터 `full`을 선택하려면 다음과 같이 실행한다.
+
+```powershell
+conda run --no-capture-output -n pinocchio-workspace decanting-live `
+  --default-profile full `
+  --open
+```
+
+`full`의 sampling만 더 촘촘하게 바꾸는 예는 다음과 같다. 이 세 option은
+`quick`의 고정된 끝점 중심 설정을 바꾸지 않는다.
+
+```powershell
+conda run --no-capture-output -n pinocchio-workspace decanting-live `
+  --default-profile full `
+  --cartesian-step-mm 25 `
+  --cartesian-rotation-step-deg 2.5 `
+  --joint-interpolation-samples 5 `
+  --open
+```
+
+로봇 base, lift, tote offset, clearance는 config에서 만든 범위 안에서 연속
+숫자로 조정하고, SKU, corner, coordination, 300/450 mm J3는 choice로 고른다.
+기본 official UR20은 평가와 표시에 함께 쓰인다. 반면 준비된 FANUC/Isaac
+SR-12iA mesh는 표시 전용이다. `450 mm`를 포함한 live feasibility는
+`assets/robots/sr12ia/sr12ia_approx.urdf`의 보수적 300/450 mm proxy 또는
+`--sr12ia-urdf`로 명시한 평가 proxy가 계산한다. native 300 mm인 준비 mesh가
+450 mm feasibility를 판정하지 않는다. 표시 model만 바꾸는 option은
+`--sr12ia-visual-urdf`다.
+
+충돌 형상을 표시하려면 `--show-collisions`, 준비 mesh가 없을 때 계산 proxy를
+의도적으로 표시하려면 `--allow-sr-visual-fallback`을 사용한다. live UI 기본
+port는 `8766`이며 `--port PORT`로 바꿀 수 있다.
+
+### 4.3 환경 및 nominal robot pose만 확인
 
 결과 cache UI가 아니라 환경 배치 자체를 확인할 때 사용한다.
 
 ```powershell
-conda run --prefix .\.venv decanting-view --open
+conda run -n pinocchio-workspace decanting-view --open
 ```
 
 파라미터 변경 예:
 
 ```powershell
-conda run --prefix .\.venv decanting-view `
+conda run -n pinocchio-workspace decanting-view `
   --ur-base -1.300 -7.350 0.850 90 `
   --sr-base -0.300 -7.073643684 0.665 -90 `
   --lift-height-mm 200 `
@@ -214,7 +295,7 @@ conda run --prefix .\.venv decanting-view `
 Coal collision 및 SR 작업영역 검사를 수행하고 compact JSON을 만든다.
 
 ```powershell
-conda run --prefix .\.venv decanting-evaluate `
+conda run -n pinocchio-workspace decanting-evaluate `
   --ur-base -1.300 -7.350 0.850 90 `
   --sr-base -0.300 -7.073643684 0.665 -90 `
   --sku 123591 `
@@ -237,7 +318,7 @@ base 위치를 암묵적으로 생성하지 않는다.
 ### 6.1 검증된 40-case commissioning cache 재생성
 
 ```powershell
-conda run --prefix .\.venv decanting-precompute `
+conda run -n pinocchio-workspace decanting-precompute `
   --grid config\case_grid_working.yaml `
   --output-json outputs\precomputed_working_cases.json.gz
 ```
@@ -251,7 +332,7 @@ conda run --prefix .\.venv decanting-precompute `
 현재 저장된 nominal cache와 동일하게 task pose 위주로 빠르게 생성:
 
 ```powershell
-conda run --prefix .\.venv decanting-precompute `
+conda run -n pinocchio-workspace decanting-precompute `
   --grid config\case_grid_nominal.yaml `
   --output-json outputs\precomputed_nominal_cases.json.gz `
   --cartesian-step-mm 10000 `
@@ -267,7 +348,7 @@ conda run --prefix .\.venv decanting-precompute `
 실행한다.
 
 ```powershell
-conda run --prefix .\.venv decanting-precompute `
+conda run -n pinocchio-workspace decanting-precompute `
   --grid config\case_grid_nominal.yaml `
   --output-json outputs\precomputed_nominal_path_sampled.json.gz
 ```
@@ -275,7 +356,7 @@ conda run --prefix .\.venv decanting-precompute `
 큰 grid를 실수로 실행하지 않도록 case 상한을 둘 수 있다.
 
 ```powershell
-conda run --prefix .\.venv decanting-precompute `
+conda run -n pinocchio-workspace decanting-precompute `
   --grid config\case_grid_nominal.yaml `
   --output-json outputs\precomputed_nominal_limited_example.json.gz `
   --max-cases 720
@@ -287,18 +368,19 @@ SKU나 lift height별 shard 계산에는 `--only-sku`와
 
 ## 7. 환경을 활성화해서 짧게 실행하는 방법
 
-매번 `conda run --prefix .\.venv`를 쓰지 않으려면 환경을 활성화한다.
+매번 `conda run -n pinocchio-workspace`를 쓰지 않으려면 환경을 활성화한다.
 
 ```powershell
-conda activate .\.venv
+conda activate pinocchio-workspace
 $env:PYTHONUTF8 = "1"
 decanting-setup
 python -m pytest
 decanting-playback --open
+decanting-live --open
 ```
 
 PowerShell에서 `conda activate`가 동작하지 않는다면 1.2절의 Conda 초기화를
-수행하거나 계속 `conda run --prefix` 형식을 사용한다.
+수행하거나 계속 `conda run -n pinocchio-workspace` 형식을 사용한다.
 
 ## 8. 다른 checkout 위치에서 실행할 때
 
@@ -306,14 +388,14 @@ Editable install이면 저장소 위치는 자동으로 인식된다. 코드를 
 새로 clone한 뒤에는 해당 위치에서 editable install을 다시 실행한다.
 
 ```powershell
-conda run --prefix .\.venv python -m pip install -e . --no-deps --no-build-isolation
+conda run -n pinocchio-workspace python -m pip install -e . --no-deps --no-build-isolation
 ```
 
 Non-editable install을 의도적으로 사용하는 경우에만 저장소 root를 명시한다.
 
 ```powershell
 $env:DECANTING_WORKSPACE_ROOT = (Get-Location).Path
-conda run --prefix .\.venv decanting-setup
+conda run -n pinocchio-workspace decanting-setup
 ```
 
 코드나 URDF/mesh가 바뀌면 기존 cache fingerprint가 맞지 않는 것이 정상이다.
@@ -329,15 +411,15 @@ Conda가 없는 것이 아니라 PowerShell PATH/초기화가 빠진 경우가 �
 
 ### NumPy 또는 BLAS DLL load 실패
 
-`.\.venv\python.exe`를 직접 실행하지 않는다. `conda run --prefix .\.venv`나
-활성화된 Conda shell을 사용한다.
+Conda environment의 `python.exe`를 경로로 직접 실행하지 않는다.
+`conda run -n pinocchio-workspace`나 활성화된 Conda shell을 사용한다.
 
-### playback에서 SR-12iA mesh가 없다고 실패
+### playback/live에서 SR-12iA mesh가 없다고 실패
 
 정상적인 보호 동작이다. 먼저 다음을 수행한다.
 
 ```powershell
-conda run --prefix .\.venv decanting-setup --accept-fanuc-license
+conda run -n pinocchio-workspace decanting-setup --accept-fanuc-license
 ```
 
 라이선스가 허용된 로컬 USD가 있다면 `--sr12ia-usd` 방식을 사용한다.
@@ -350,5 +432,55 @@ conda run --prefix .\.venv decanting-setup --accept-fanuc-license
 
 ### MeshCat 브라우저가 자동으로 열리지 않음
 
-터미널에 출력된 HTTP 주소를 직접 브라우저에 입력한다. 포트를 고정하려면
-playback에 `--port PORT`를 추가한다.
+터미널에 출력된 HTTP 주소를 직접 브라우저에 입력한다. Live mode에서는
+`LIVE CONTROL UI (parameters + calculated results)` 바로 아래 주소를 열어야
+한다. `Embedded MeshCat viewer only (no controls)` 또는 `/static/` 주소는
+파라미터 UI가 아니다. `conda run` 사용 시 URL 출력이 버퍼링되지 않도록
+`--no-capture-output`을 붙인다.
+
+포트를 고정하려면 cache UI는 `decanting-playback --port PORT`, live UI는
+`decanting-live --port PORT`를 사용한다. 두 UI를 동시에 실행할 때는 서로
+다른 control port를 지정한다.
+
+### live UI에서 parameter가 비어 있고 계산 결과가 없음
+
+다음 순서로 확인한다.
+
+1. 주소가 MeshCat `/static/`가 아니라 live control URL인지 확인한다.
+2. 코드 변경 전에 시작한 `decanting-live` terminal을 `Ctrl+C`로 종료한다.
+3. 위 4.2절의 `--no-capture-output` 명령으로 새 process를 시작한다.
+4. page 상단에 `LIVE CONTROL UI · PARAMETERS + RESULTS` badge가 있는지 확인한다.
+5. 15개 parameter와 `Calculated result` 상자가 나타나는지 확인한다.
+
+서버와 catalog 자체는 PowerShell에서 다음처럼 분리해 검사할 수 있다. Custom
+port를 사용했다면 `8766`을 해당 값으로 바꾼다.
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8766/healthz
+$Catalog = Invoke-RestMethod http://127.0.0.1:8766/api/catalog
+$Catalog.mode
+$Catalog.parameter_schema.PSObject.Properties.Name
+Get-NetTCPConnection -LocalPort 8766 -State Listen | Select-Object LocalAddress, LocalPort, OwningProcess
+```
+
+정상이면 health status는 `ok`, catalog mode는 `live`, parameter 이름은 15개다.
+Root page는 열리지만 control이 없으면 화면 하단의 `초기화 실패:` 메시지와
+catalog 응답을 먼저 확인한다.
+
+2026-08-31 이전 live UI process에는 숫자 control 생성 중 JavaScript
+`not iterable` 오류로 초기 계산까지 중단되는 버전이 있을 수 있다. 현재
+source는 수정됐지만 이미 실행 중인 Python process에는 자동 반영되지 않으므로
+반드시 재시작해야 한다. HTTP 응답은 `Cache-Control: no-store`이므로 process를
+재시작한 뒤 control page를 새로고침한다.
+
+### live control port가 이미 사용 중이라고 실패
+
+Windows에서는 오래된 server와 새 server가 같은 port에서 서로 다른 UI를
+동시에 제공하지 못하도록 exclusive bind를 사용한다. 해당 port를 사용 중인
+기존 `decanting-live`를 `Ctrl+C`로 종료하거나 새 port를 지정한다.
+
+```powershell
+conda run --no-capture-output -n pinocchio-workspace decanting-live `
+  --port 8767 `
+  --open
+```

@@ -1,10 +1,10 @@
 """Local web controls wrapped around a live MeshCat view.
 
-The browser never solves IK.  It submits exact selections from a precomputed
-catalog to a small localhost HTTP server; the supplied backend then updates an
-already-running MeshCat viewer from cached configurations and ellipsoid data.
-This keeps licensed robot meshes in the live MeshCat session instead of
-embedding them in a redistributable HTML report.
+The browser never solves IK itself.  A supplied control page can either submit
+exact cache selections or request an on-demand evaluation from the local
+Python backend, which then updates the already-running MeshCat viewer.  This
+also keeps licensed robot meshes in the local session instead of embedding
+them in a redistributable HTML report.
 """
 
 from __future__ import annotations
@@ -13,13 +13,15 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import html
 import json
+import os
+import socket
 from threading import Lock, Thread
-from typing import Mapping, Protocol
+from typing import Callable, Mapping, Protocol
 from urllib.parse import urlsplit
 
 
 class PlaybackBackend(Protocol):
-    """Interface consumed by :class:`MeshcatControlServer`."""
+    """Common catalog/selection interface consumed by the control server."""
 
     def catalog(self) -> Mapping[str, object]:
         """Return JSON-compatible exact cases and step/check/sample metadata."""
@@ -32,16 +34,33 @@ class MeshcatControlServer(ThreadingHTTPServer):
     """Threaded localhost server for the parameter panel and JSON API."""
 
     daemon_threads = True
+    # ``HTTPServer`` enables SO_REUSEADDR.  On Windows that permits two live
+    # processes to bind the same port, so a restart can keep serving a stale
+    # control page nondeterministically.  Keep quick rebinding on POSIX, but
+    # request an exclusive listener on Windows.
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self) -> None:
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(
+                socket.SOL_SOCKET,
+                socket.SO_EXCLUSIVEADDRUSE,
+                1,
+            )
+        super().server_bind()
 
     def __init__(
         self,
         address: tuple[str, int],
         backend: PlaybackBackend,
         meshcat_url: str,
+        *,
+        page_builder: Callable[[str], str] | None = None,
     ) -> None:
         _validate_meshcat_url(meshcat_url)
         self.backend = backend
         self.meshcat_url = meshcat_url
+        self.control_page = (page_builder or build_control_page)(meshcat_url)
         self.selection_lock = Lock()
         super().__init__(address, _PlaybackRequestHandler)
 
@@ -67,7 +86,7 @@ class _PlaybackRequestHandler(BaseHTTPRequestHandler):
         if path == "/":
             self._send_bytes(
                 HTTPStatus.OK,
-                build_control_page(self.server.meshcat_url).encode("utf-8"),
+                self.server.control_page.encode("utf-8"),
                 "text/html; charset=utf-8",
             )
             return
@@ -82,7 +101,17 @@ class _PlaybackRequestHandler(BaseHTTPRequestHandler):
         self._send_json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
-        if urlsplit(self.path).path != "/api/select":
+        path = urlsplit(self.path).path
+        operations = {
+            "/api/select": ("select", "invalid_selection", "selection_failed"),
+            "/api/evaluate": ("evaluate", "invalid_parameters", "evaluation_failed"),
+        }
+        operation = operations.get(path)
+        if operation is None:
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
+            return
+        method = getattr(self.server.backend, operation[0], None)
+        if not callable(method):
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
             return
         try:
@@ -98,17 +127,17 @@ class _PlaybackRequestHandler(BaseHTTPRequestHandler):
             if not isinstance(decoded, Mapping):
                 raise ValueError("request root must be an object")
             with self.server.selection_lock:
-                result = self.server.backend.select(decoded)
+                result = method(decoded)
             self._send_json(HTTPStatus.OK, dict(result))
         except (KeyError, TypeError, ValueError) as exc:
             self._send_json(
                 HTTPStatus.BAD_REQUEST,
-                {"error": "invalid_selection", "message": str(exc)},
+                {"error": operation[1], "message": str(exc)},
             )
         except Exception as exc:  # pragma: no cover - defensive server boundary
             self._send_json(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
-                {"error": "selection_failed", "message": str(exc)},
+                {"error": operation[2], "message": str(exc)},
             )
 
     def log_message(self, format: str, *args: object) -> None:

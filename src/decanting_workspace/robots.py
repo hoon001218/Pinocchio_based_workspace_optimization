@@ -284,9 +284,16 @@ def load_robot_bundle(
     if not path.is_file():
         raise FileNotFoundError(f"URDF not found: {path}")
     pinocchio_path = _pinocchio_path(path)
-    package_paths = [
-        str(_pinocchio_path(Path(item).resolve())) for item in package_dirs
-    ]
+    # urdfdom resolves bare relative mesh names through ``package_dirs`` rather
+    # than relative to the URDF file itself on every platform.  Always include
+    # the URDF directory so portable colocated bundles (such as the prepared
+    # SR-12iA asset) load independently of the process working directory.
+    package_roots = tuple(
+        dict.fromkeys(
+            (path.parent, *(Path(item).resolve() for item in package_dirs))
+        )
+    )
+    package_paths = [str(_pinocchio_path(item)) for item in package_roots]
     root_joint = pin.JointModelFreeFlyer() if floating_base else None
 
     if os.name == "nt" and not str(pinocchio_path).isascii():

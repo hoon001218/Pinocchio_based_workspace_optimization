@@ -120,7 +120,10 @@ def main(
             _validate_candidate_report_paths()
             print("OK candidate reports contain no checkout-specific model paths")
 
-        print("Setup complete. This checkout is ready for MeshCat playback.")
+        print(
+            "Setup complete. This checkout is ready for MeshCat playback "
+            "and live evaluation."
+        )
         return 0
     except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

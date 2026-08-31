@@ -1,6 +1,6 @@
 # 개발 인수인계
 
-마지막 정리일: 2026-08-30
+마지막 정리일: 2026-08-31
 
 이 문서는 다른 컴퓨터와 다른 개발자가 현재 작업을 이어가기 위한 실행·의사결정 기록이다. 코드 계층과 데이터 흐름은 [ARCHITECTURE.md](ARCHITECTURE.md), 사용자 명령의 전체 옵션은 [README.md](../README.md)를 먼저 함께 확인한다.
 
@@ -90,6 +90,12 @@ Step 3과 4는 simultaneous mode에서 지정된 SR 절단 자세와 작업영�
 - translational/normalized 6-D Jacobian SVD metric
 - candidate report와 finite case-grid precompute
 - cached `q`, collision, target, manipulability ellipsoid의 MeshCat UI replay
+- 임의의 단일 parameter set을 계산하고 최신 결과만 메모리에 보관하는
+  MeshCat live evaluation UI
+- schema 기반 15개 live parameter control과 case 전체 `Calculated result`
+  요약, step/check/sample 세부 재생
+- live control URL과 raw MeshCat viewer URL의 명시적 분리 및 Windows control
+  port exclusive bind
 - UR20 suction display의 `tool0` 추종
 - Step 8 exact supply endpoint의 독립 posture 검사
 - checkout 절대경로를 제외한 cache fingerprint
@@ -140,18 +146,20 @@ git submodule update --init BGF
 
 ### 4.2 Conda 환경
 
-Pixi는 사용하지 않는다. Python 3.12 Pinocchio 환경은 repository-local prefix로 만든다.
+Pixi는 사용하지 않는다. Python 3.12 Pinocchio 환경은 Miniconda의
+`pinocchio-workspace` named environment를 사용하며 repository-local Python
+environment를 만들지 않는다.
 
 ```powershell
-conda env create --prefix .\.venv --file environment.yml
-conda run --prefix .\.venv python -m pip install -e . --no-deps --no-build-isolation
+conda env create -n pinocchio-workspace --file environment.yml
+conda run -n pinocchio-workspace python -m pip install -e . --no-deps --no-build-isolation
 ```
 
 환경이 이미 있으면 다음과 같이 갱신한다.
 
 ```powershell
-conda env update --prefix .\.venv --file environment.yml --prune
-conda run --prefix .\.venv python -m pip install -e . --no-deps --no-build-isolation
+conda env update -n pinocchio-workspace --file environment.yml --prune
+conda run -n pinocchio-workspace python -m pip install -e . --no-deps --no-build-isolation
 ```
 
 Windows의 비ASCII workspace에서는 먼저 UTF-8 mode를 켠다.
@@ -160,14 +168,18 @@ Windows의 비ASCII workspace에서는 먼저 UTF-8 mode를 켠다.
 $env:PYTHONUTF8 = "1"
 ```
 
-Windows에서 `.\.venv\python.exe`를 직접 실행하면 Conda의 `Library\bin` 활성화가 빠져 NumPy/BLAS DLL load가 실패할 수 있다. `conda activate .\.venv` 또는 위의 `conda run --prefix`를 사용한다.
+Windows에서는 Conda environment의 `python.exe`를 경로로 직접 실행하면
+`Library\bin` 활성화가 빠져 NumPy/BLAS DLL load가 실패할 수 있다.
+`conda activate pinocchio-workspace` 또는 위의
+`conda run -n pinocchio-workspace`를 사용한다.
 
-Linux/macOS shell에서도 같은 repository-local prefix를 사용한다. PowerShell의 backtick만 제거하면 된다.
+Linux/macOS shell에서도 같은 named environment를 사용한다. PowerShell의
+backtick만 제거하면 된다.
 
 ```bash
-conda env create --prefix ./.venv --file environment.yml
-conda run --prefix ./.venv python -m pip install -e . --no-deps --no-build-isolation
-conda run --prefix ./.venv python -m pytest
+conda env create -n pinocchio-workspace --file environment.yml
+conda run -n pinocchio-workspace python -m pip install -e . --no-deps --no-build-isolation
+conda run -n pinocchio-workspace python -m pytest
 ```
 
 기본 경로 탐색은 editable checkout의 모듈 위치를 기준으로 한다. Python을
@@ -182,13 +194,13 @@ SR manufacturer mesh는 license 때문에 repository에 없다. 두 경로 중 �
 권한 있는 NVIDIA source를 명시적으로 내려받는 경로:
 
 ```powershell
-conda run --prefix .\.venv decanting-setup --accept-fanuc-license
+conda run -n pinocchio-workspace decanting-setup --accept-fanuc-license
 ```
 
 이미 보유한 Isaac Sim `payloads/geometries.usd`를 사용하는 경로:
 
 ```powershell
-conda run --prefix .\.venv decanting-setup `
+conda run -n pinocchio-workspace decanting-setup `
   --sr12ia-usd C:\path\to\Fanuc\sr12ia\payloads\geometries.usd
 ```
 
@@ -204,7 +216,7 @@ conda run --prefix .\.venv decanting-setup `
 기존 bundle을 download 없이 검사하려면 option 없는 setup을 실행한다.
 
 ```powershell
-conda run --prefix .\.venv decanting-setup
+conda run -n pinocchio-workspace decanting-setup
 ```
 
 이 명령은 SR bundle과 함께 official UR20, config, tracked cache fingerprint 등 실행 계약을 doctor 방식으로 확인한다. SR bundle이 없는 경우 조용히 fallback하지 않고 준비 방법을 포함한 오류를 반환한다.
@@ -212,7 +224,7 @@ conda run --prefix .\.venv decanting-setup
 source 또는 converter가 바뀌어 기존 SR bundle을 강제로 다시 만들 때만 다음 option을 추가한다.
 
 ```powershell
-conda run --prefix .\.venv decanting-setup `
+conda run -n pinocchio-workspace decanting-setup `
   --accept-fanuc-license `
   --refresh-sr12ia
 ```
@@ -222,8 +234,8 @@ robot asset만 준비하고 아직 tracked cache를 검증하지 않을 특별�
 SR asset만 저수준으로 준비할 수도 있다.
 
 ```powershell
-conda run --prefix .\.venv decanting-assets --download --accept-fanuc-license
-conda run --prefix .\.venv decanting-assets C:\path\to\geometries.usd
+conda run -n pinocchio-workspace decanting-assets --download --accept-fanuc-license
+conda run -n pinocchio-workspace decanting-assets C:\path\to\geometries.usd
 ```
 
 `.cache/robot_assets/sr12ia`를 다른 PC에서 복사하는 방식은 권장하지 않는다. 각 PC에서 setup을 실행하면 license opt-in, source hash, converter version, relative mesh reference를 함께 검증할 수 있다.
@@ -231,17 +243,18 @@ conda run --prefix .\.venv decanting-assets C:\path\to\geometries.usd
 ### 4.4 검증
 
 ```powershell
-conda run --prefix .\.venv python -m pytest
-conda run --prefix .\.venv decanting-setup
+conda run -n pinocchio-workspace python -m pytest
+conda run -n pinocchio-workspace decanting-setup
 ```
 
-현재 통합 baseline은 183 tests 통과이다. 테스트 수는 추가될 수 있으므로
-숫자보다 전체 suite가 성공하는지를 기준으로 한다.
+2026-08-31 기준 통합 baseline은 `219 passed`, 기존 MeshCat/pyzmq deprecation
+warning 1건이다. 테스트 수는 기능 추가에 따라 바뀌므로 고정된 개수보다 전체
+suite가 성공하는지를 기준으로 한다.
 
 SR licensed mesh 없이 계산 fallback만 smoke-test하려면 다음 명령을 사용할 수 있다.
 
 ```powershell
-conda run --prefix .\.venv decanting-view `
+conda run -n pinocchio-workspace decanting-view `
   --ur20-source official `
   --sr12ia-source approximate `
   --open
@@ -254,23 +267,94 @@ conda run --prefix .\.venv decanting-view `
 verified working cache:
 
 ```powershell
-conda run --prefix .\.venv decanting-playback --open
+conda run -n pinocchio-workspace decanting-playback --open
 ```
 
 broader nominal diagnostic cache:
 
 ```powershell
-conda run --prefix .\.venv decanting-playback `
+conda run -n pinocchio-workspace decanting-playback `
   --cache outputs\precomputed_nominal_cases.json.gz `
   --open
 ```
 
 UI에서 최소한 step 1, 3, 5, 8을 선택해 robot 자세를 확인한다. UR20 suction이 각 `q`를 따라 이동하는지, 성공 sample에서 ellipsoid가 표시되는지, step 8이 기본적으로 `filled_tote_final_pose_at_supply`를 보여 주는지 확인한다.
 
+### On-demand live MeshCat UI
+
+기존 playback은 검증된 불변 cache를 exact lookup으로 재생하며 IK를 다시 풀지
+않는다. 이와 별개의 live UI는 파라미터 한 세트를 즉시 계산하고 최신 결과
+하나만 메모리에 유지한다.
+
+```powershell
+conda run --no-capture-output -n pinocchio-workspace decanting-live --open
+```
+
+운영자가 열어야 하는 주소는 터미널의 `LIVE CONTROL UI (parameters +
+calculated results)`이며 기본값은 `http://127.0.0.1:8766/`이다. MeshCat
+`/static/` 주소는 control page 안의 3-D iframe 전용으로 parameter와 계산
+결과가 없다. Conda를 활성화한 shell에서는 `decanting-live --open`을 직접
+실행해도 된다.
+
+Live panel에는 UR/SR base pose 8개 값과 SKU, lift, tote offset, clearance,
+corner, coordination, J3 stroke를 합친 15개 control이 표시된다. 최초 quick
+계산은 page 초기화 직후 자동 실행된다. `Calculated result`에는 evaluation
+ID/profile, cell feasibility, installation validity, HARD task 결과, SR workspace,
+case status가 표시되고, 별도 Task pose 영역은 최신 case의 step/check/sample을
+재계산 없이 선택한다.
+
+기본 `quick` profile은 `10 m`, `180°`, joint interior sample 0으로 끝점 중심의
+반응형 진단을 한다. 연속 collision-free path 결과가 아니다. `full` profile은
+기본 `50 mm`, `5°`, joint interior sample 3으로 더 촘촘한 로컬 sampling을
+수행하지만 station 사이의 전역 motion planning이나 전역 경로 존재를 보장하지
+않는다.
+
+```powershell
+conda run --no-capture-output -n pinocchio-workspace decanting-live `
+  --default-profile full `
+  --open
+```
+
+UI는 변경을 500 ms debounce하고 계산 중 들어온 여러 변경을 최신 한 건으로
+합친다. HTTP server도 evaluation과 pose selection을 하나의 lock으로
+직렬화한다. SR J3 limit와 collision checker가 shared concurrent evaluation에
+안전하지 않으므로 이 직렬화 계약을 제거하면 안 된다. 결과는
+`outputs/`에 저장하지 않으며, step/check/sample 변경은 최신 메모리 case만
+재생한다.
+
+FANUC 준비 mesh는 표시 전용 300 mm model이다. live 계산은 기본
+`assets/robots/sr12ia/sr12ia_approx.urdf`의 보수적 300/450 mm 평가 proxy를
+사용하므로 450 mm feasibility도 proxy 결과다. `--sr12ia-visual-urdf`는 계산
+model을 바꾸지 않고, `--sr12ia-urdf`만 평가 proxy를 바꾼다. 준비 mesh가 없을
+때 proxy 표시를 허용하려면 명시적으로 `--allow-sr-visual-fallback`을 쓴다.
+
+수동 확인 시 base/lift/tote 값을 바꿔 evaluation elapsed가 갱신되는지,
+계산 완료 뒤 step 1, 3, 5, 8을 바꿀 때 추가 evaluation 없이 최신 case의
+자세가 표시되는지, Auto calculate를 끄면 Calculate now 전까지 대기하는지
+확인한다.
+
+#### 2026-08-31 live UI blank-result 회귀 수정
+
+초기 구현의 숫자 control 생성 loop가 JavaScript 배열이 아닌 괄호식
+`(slider, number)`을 순회했다. JavaScript comma operator 때문에 첫
+`HTMLInputElement`에서 `not iterable` 예외가 발생했고, 그 결과 parameter
+영역이 비어 있으며 최초 `/api/evaluate`도 호출되지 않았다. 현재는
+`[slider, number]` 배열 반복으로 수정했고 다음 항목을 회귀 계약으로 둔다.
+
+- catalog의 parameter schema는 15개다.
+- control page에는 live marker와 `Calculated result` 영역이 있다.
+- 숫자 range/number pair는 배열로 구성한다.
+- initial evaluate, result hierarchy, elapsed/status 표시 경로가 존재한다.
+- 같은 Windows control port에 두 live server를 동시에 띄울 수 없다.
+
+코드 갱신 전 시작한 Python process는 새 source를 다시 import하지 않는다.
+기존 `decanting-live` terminal을 `Ctrl+C`로 종료한 뒤 재실행해야 하며, 브라우저
+에서도 `/static/` 탭이 아니라 새 control URL을 열거나 새로고침한다.
+
 ### 단일 후보 평가
 
 ```powershell
-conda run --prefix .\.venv decanting-evaluate `
+conda run -n pinocchio-workspace decanting-evaluate `
   --sku 123591 `
   --corner all `
   --coordination both `
@@ -282,7 +366,7 @@ conda run --prefix .\.venv decanting-evaluate `
 ### Working cache 재생성
 
 ```powershell
-conda run --prefix .\.venv decanting-precompute `
+conda run -n pinocchio-workspace decanting-precompute `
   --grid config\case_grid_working.yaml `
   --output-json outputs\precomputed_working_cases.json.gz
 ```
@@ -290,7 +374,7 @@ conda run --prefix .\.venv decanting-precompute `
 ### Nominal task-pose cache 재생성
 
 ```powershell
-conda run --prefix .\.venv decanting-precompute `
+conda run -n pinocchio-workspace decanting-precompute `
   --grid config\case_grid_nominal.yaml `
   --output-json outputs\precomputed_nominal_cases.json.gz `
   --cartesian-step-mm 10000 `
@@ -311,7 +395,8 @@ full path-sampled nominal cache는 훨씬 오래 걸리고 파일이 커질 수 
 | SR pinned download manifest | 포함 | URL/source SHA/license metadata를 setup이 검증 |
 | `.cache/README.md` | 포함 | cache에 source-of-truth가 없다는 정책과 bootstrap 경로 설명 |
 | SR manufacturer OBJ/URDF/provenance | 미포함 | license opt-in setup 또는 local USD 변환 |
-| `.venv`, `.pytest_cache` | 미포함 | 각 PC에서 재생성 |
+| Miniconda `pinocchio-workspace`, `.pytest_cache` | 미포함 | 각 PC에서 재생성 |
+| live evaluation result | 해당 없음 | 최신 단일 case만 process memory에 유지; 파일로 저장하지 않음 |
 | tracked `outputs/*.json.gz` cache | 포함 | path-independent fingerprint로 그대로 검증/replay |
 | checked result report | 포함 | repo-relative logical model reference 사용; 계산 변경 시 재생성 |
 | BGF | submodule pointer만 포함 | runtime 불필요; 필요할 때 `git submodule update --init BGF` |
@@ -371,6 +456,10 @@ full path-sampled nominal cache는 훨씬 오래 걸리고 파일이 커질 수 
 - simultaneous mode는 시간 동기화된 robot-robot path 대신 보수적인 SR exclusion OBB를 쓴다.
 - conveyor/worktable/pedestal/camera는 primitive collision proxy다.
 - deterministic IK `not_found`와 local interpolation 실패는 전역 infeasibility 증명이 아니다.
+- live `quick`은 끝점 중심 반응형 진단이고, `full`도 더 촘촘한 로컬
+  sampling일 뿐 전역 motion planning 결과가 아니다.
+- live 결과는 최신 단일 case만 메모리에 남으며 재현 artifact가 필요하면
+  case-grid와 `decanting-precompute`로 별도 cache를 생성해야 한다.
 - working setup의 clearance는 production robustness를 보장하지 않는다.
 - `environment.yml`은 호환 version 범위를 고정하지만 platform별 full lockfile은 아니다. tracked cache replay는 동일하지만 cache를 다시 계산할 때 dependency build에 따른 미세한 수치 차이가 생길 수 있다. bitwise 재현성이 필요하면 지원 OS별 Conda explicit lock을 추가해야 한다.
 - 현 no-tool-offset SR/support geometry에서는 SKU `180043`, `049995`가 vertical cutting range를 만족하지 않는다. 실제 cutter offset과 mounting geometry가 정해지면 재평가해야 한다.
@@ -378,7 +467,7 @@ full path-sampled nominal cache는 훨씬 오래 걸리고 파일이 커질 수 
 
 ## 9. 다음 개발 우선순위
 
-1. 완전히 새로운 ASCII 경로와 비ASCII 경로 clone에서 `decanting-setup`, pytest, cache load, MeshCat playback을 각각 검증한다.
+1. 완전히 새로운 ASCII 경로와 비ASCII 경로 clone에서 `decanting-setup`, pytest, cache load, MeshCat playback, live evaluation을 각각 검증한다.
 2. 실제 UR suction gripper 치수/TCP와 SR cutting tool offset을 확정한다.
 3. base의 `x/y/z/yaw` bounds와 허용 간격을 확정한다.
 4. pose tolerance, clearance, collision margin을 공정 요구사항으로 확정한다.
@@ -398,6 +487,12 @@ full path-sampled nominal cache는 훨씬 오래 걸리고 파일이 커질 수 
 - [ ] tracked working/nominal cache가 현재 fingerprint로 load된다.
 - [ ] candidate report에 machine-specific 절대 model path가 없다.
 - [ ] MeshCat에서 실제 UR20/SR mesh가 보인다.
+- [ ] `decanting-playback`이 cache만 재생하고 `decanting-live`가 최신 단일
+  case만 즉시 계산하는지 구분해 확인한다.
+- [ ] live control URL에서 15개 parameter와 `Calculated result`가 보이고,
+  raw MeshCat `/static/` URL과 혼동하지 않는다.
+- [ ] live UI의 quick/full 의미, 500 ms latest-only 직렬 계산, 비영속 결과를
+  운영자에게 설명할 수 있다.
 - [ ] UR20 suction이 step pose를 따라 움직인다.
 - [ ] 성공 sample의 manipulability ellipsoid가 보인다.
 - [ ] step 8 exact `ToteSupplyFrame` final posture와 검사 결과가 보인다.

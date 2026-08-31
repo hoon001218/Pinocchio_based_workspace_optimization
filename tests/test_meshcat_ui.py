@@ -25,6 +25,12 @@ class _Backend:
             raise KeyError("unknown case")
         return {"step_status": "success", "status_text": "cached"}
 
+    def evaluate(self, request):
+        self.requests.append({"evaluate": dict(request)})
+        if request.get("value") != 1:
+            raise ValueError("invalid value")
+        return {"elapsed_seconds": 0.25}
+
 
 def _json(url: str, *, payload=None):
     data = None if payload is None else json.dumps(payload).encode("utf-8")
@@ -89,6 +95,14 @@ def test_local_server_serves_catalog_and_serializes_selections():
         assert status == 200
         assert selected["status_text"] == "cached"
         assert backend.requests == [{"case_id": "case-1", "step_index": 1}]
+
+        status, evaluated = _json(
+            server.control_url + "api/evaluate",
+            payload={"value": 1},
+        )
+        assert status == 200
+        assert evaluated == {"elapsed_seconds": 0.25}
+        assert backend.requests[-1] == {"evaluate": {"value": 1}}
     finally:
         server.shutdown()
         server.server_close()
@@ -115,3 +129,46 @@ def test_local_server_returns_structured_bad_selection():
         server.shutdown()
         server.server_close()
         thread.join(timeout=2.0)
+
+
+def test_server_uses_custom_page_and_structures_bad_evaluation():
+    server = MeshcatControlServer(
+        ("127.0.0.1", 0),
+        _Backend(),
+        "http://127.0.0.1:7000/static/",
+        page_builder=lambda url: f"<html>live:{url}</html>",
+    )
+    thread = server.start_background()
+    try:
+        with urlopen(server.control_url, timeout=2.0) as response:
+            assert response.read().decode("utf-8") == (
+                "<html>live:http://127.0.0.1:7000/static/</html>"
+            )
+
+        with pytest.raises(HTTPError) as caught:
+            _json(server.control_url + "api/evaluate", payload={"value": 2})
+        assert caught.value.code == 400
+        payload = json.loads(caught.value.read().decode("utf-8"))
+        assert payload["error"] == "invalid_parameters"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2.0)
+
+
+def test_control_server_rejects_a_second_live_listener_on_the_same_port():
+    first = MeshcatControlServer(
+        ("127.0.0.1", 0),
+        _Backend(),
+        "http://127.0.0.1:7000/static/",
+    )
+    try:
+        port = first.server_address[1]
+        with pytest.raises(OSError):
+            MeshcatControlServer(
+                ("127.0.0.1", port),
+                _Backend(),
+                "http://127.0.0.1:7000/static/",
+            )
+    finally:
+        first.server_close()

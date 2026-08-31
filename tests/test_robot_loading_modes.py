@@ -41,6 +41,40 @@ def test_visual_loading_is_opt_in(ur20_urdf: Path) -> None:
     assert with_visuals.visual_model.ngeoms > 0
 
 
+def test_bare_relative_meshes_resolve_from_urdf_directory(tmp_path: Path) -> None:
+    bundle_dir = tmp_path / "portable_bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "mesh.obj").write_text(
+        "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n",
+        encoding="utf-8",
+    )
+    urdf = bundle_dir / "robot.urdf"
+    urdf.write_text(
+        """<robot name="relative_mesh">
+  <link name="base"/>
+  <link name="arm">
+    <visual><geometry><mesh filename="mesh.obj"/></geometry></visual>
+    <collision><geometry><mesh filename="mesh.obj"/></geometry></collision>
+  </link>
+  <joint name="joint1" type="revolute">
+    <parent link="base"/><child link="arm"/><axis xyz="0 0 1"/>
+    <limit lower="-1" upper="1" effort="1" velocity="1"/>
+  </joint>
+</robot>
+""",
+        encoding="utf-8",
+    )
+
+    loaded = load_robot_bundle("relative_mesh", urdf, load_visual=True)
+
+    assert loaded.collision_model.ngeoms == 1
+    assert loaded.visual_model is not None
+    assert loaded.visual_model.ngeoms == 1
+    assert Path(loaded.visual_model.geometryObjects[0].meshPath).resolve() == (
+        bundle_dir / "mesh.obj"
+    ).resolve()
+
+
 def test_suction_proxy_is_attached_to_tool0_positive_z(ur20_urdf: Path) -> None:
     bundle = load_robot_bundle("ur20", ur20_urdf)
     initial_count = bundle.collision_model.ngeoms

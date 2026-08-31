@@ -29,7 +29,7 @@ ISAAC_SIM_VERSION = "6.0"
 CONVERTER_SCHEMA_VERSION = 3
 NVIDIA_SR12IA_GEOMETRIES_URL = (
     "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/"
-    "Isaac/6.0/Isaac/Robots/Fanuc/sr12ia/payloads/geometries.usd"
+    "Isaac/6.0/Isaac/Robots_Multiphysics/Fanuc/sr12ia/payloads/geometries.usd"
 )
 NVIDIA_SR12IA_GEOMETRIES_SHA256 = (
     "1313afdb54a8c369a37e910c63007c6295cecd3d804226580fbef85c42e09740"

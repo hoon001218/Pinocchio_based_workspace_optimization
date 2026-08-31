@@ -40,8 +40,10 @@ Implemented in this stage:
   later optimization loop;
 - an explicit finite case-grid cache containing replayable Pinocchio `q`, TCP
   poses, collision diagnostics, and manipulability-ellipsoid axes;
-- a local parameter/step control panel around live Meshcat, with no IK work in
-  the browser or during pose replay.
+- an immutable cache-playback panel that performs no IK during replay;
+- a separate on-demand control panel that evaluates one parameter set in the
+  local Python process and immediately presents its in-memory result in
+  Meshcat.
 
 ## Fresh-machine setup
 
@@ -56,12 +58,12 @@ cd Pinocchio_based_workspace_optimization
 git submodule update --init BGF
 ```
 
-Create the single Conda prefix environment and install this checkout in
+Create the named Miniconda environment and install this checkout in
 editable mode:
 
 ```text
-conda env create --prefix ./.venv --file environment.yml
-conda activate ./.venv
+conda env create -n pinocchio-workspace --file environment.yml
+conda activate pinocchio-workspace
 python -m pip install -e . --no-deps --no-build-isolation
 ```
 
@@ -79,9 +81,9 @@ geometry. If an authorized `geometries.usd` is already available, use
 `decanting-setup --sr12ia-usd path/to/geometries.usd` instead. Re-running
 `decanting-setup` without either option only validates an existing bundle.
 
-Without shell activation, use `conda run --prefix ./.venv COMMAND`. On Windows,
-do not invoke `.venv/python.exe` directly because Conda's DLL paths would not
-be activated. Set `PYTHONUTF8=1` when working from a non-ASCII checkout path.
+Without shell activation, use `conda run -n pinocchio-workspace COMMAND`. On
+Windows, use the activated environment or `conda run` so Conda's DLL paths are
+configured. Set `PYTHONUTF8=1` when working from a non-ASCII checkout path.
 All repository-owned paths are resolved through the installed module rather
 than a username, drive, or checkout folder name. If Python is installed
 non-editably, set `DECANTING_WORKSPACE_ROOT` to the complete cloned repository
@@ -148,7 +150,9 @@ Sources: [Universal Robots description](https://github.com/UniversalRobots/Unive
 
 ## Visualize a scenario
 
-Open the live view:
+Open a scene-only interactive Meshcat view. This materializes the selected
+environment and nominal robot poses; it is not `decanting-live` candidate
+evaluation and it does not replay a result cache:
 
 ```powershell
 python -m decanting_workspace --open
@@ -258,6 +262,69 @@ Simultaneous mode additionally fails tote pickup against the conservative SR
 reserved volume. These are diagnostics for the starting layout, not an
 optimized result or a global infeasibility proof.
 
+## Evaluate parameters live in Meshcat
+
+The live mode is separate from immutable cache playback. It evaluates exactly
+one parameter set on demand, converts that result to the existing
+step/check/sample hierarchy in memory, and displays it immediately:
+
+```powershell
+decanting-live --open
+```
+
+Use the URL labeled `LIVE CONTROL UI (parameters + calculated results)`,
+normally `http://127.0.0.1:8766/`. The separate Meshcat `/static/` URL is only
+the embedded 3-D viewer and intentionally has no parameter controls. When
+running without an activated shell, preserve the live URL output with
+`conda run --no-capture-output -n pinocchio-workspace decanting-live --open`.
+
+`config/case_grid_working.yaml` is used only to supply the first parameter
+values shown when the page opens. `--initial-grid PATH` can select another
+grid for those initial values, but the command does not load or write a result
+cache. Continuous controls cover both robot base poses, lift height, tote
+offset, and clearance; SKU, pallet corner, coordination mode, and SR J3 stroke
+are explicit choices. After one evaluation, moving among its steps, checks,
+and samples only replays that latest in-memory result and does not recompute
+IK.
+
+The page starts with automatic calculation enabled. Parameter edits are
+debounced for 500 ms, only one calculation runs at a time, and edits made
+while it is running collapse to the latest pending parameter set. Disable
+auto calculation to stage several edits and use **Calculate now** explicitly.
+The backend also serializes evaluate/select requests because the collision
+checker and mutable SR J3 limit are not shared-worker-safe.
+
+Two profiles are available:
+
+- `quick` is the default responsive diagnostic. It uses endpoint-oriented
+  `10 m` translation and `180 deg` rotation steps with no interior joint
+  samples. It does **not** establish a continuous collision-free path.
+- `full` uses the configured local sampling, by default `50 mm`, `5 deg`, and
+  three interior joint-segment samples. It is more detailed than `quick`, but
+  remains a local diagnostic and is **not** a global motion planner or a proof
+  that a station-to-station path exists.
+
+Open with `full` selected, optionally overriding its sampling settings:
+
+```powershell
+decanting-live `
+  --default-profile full `
+  --cartesian-step-mm 25 `
+  --cartesian-rotation-step-deg 2.5 `
+  --joint-interpolation-samples 5 `
+  --open
+```
+
+The official UR20 model is used for evaluation and display by default. The
+locally prepared FANUC/Isaac SR-12iA asset is display-only. Live feasibility,
+including a selected `450 mm` J3 study, uses the configured conservative
+300/450 mm proxy (or an explicit `--sr12ia-urdf` evaluation proxy), never the
+prepared mesh. The prepared visual has a native 300 mm J3 range; a displayed
+posture outside that range is rejected rather than clamped. Use
+`--sr12ia-visual-urdf` only to change the visual model, or
+`--allow-sr-visual-fallback` to intentionally display the evaluation proxy
+when the prepared asset is unavailable.
+
 ## Precompute cases and replay them in Meshcat
 
 ### Verified commissioning setup
@@ -345,15 +412,16 @@ decanting-playback `
   --open
 ```
 
-The page combines a local parameter panel and a live Meshcat iframe. Selecting
-a case, process step, check, or sample performs an exact cache lookup. A
+The playback page combines a finite-case parameter panel and a Meshcat iframe.
+Selecting a case, process step, check, or sample performs an exact immutable
+cache lookup; it never invokes the live evaluator. A
 successful sample displays the stored robot configuration and the
 translational ellipsoid reconstructed from its cached World-aligned SVD
 directions and singular values. A failed IK sample shows its best diagnostic
 configuration with a red target frame but hides the ellipsoid. Step 6 retains
 the previous successful posture and is labelled as having no pose check.
 
-Robot visual models are loaded only once. The default live UI uses the pinned,
+Robot visual models are loaded only once. The default playback UI uses the pinned,
 repository-owned official UR20 mesh without embedding it in an exported HTML
 file. Playback also loads the locally prepared FANUC/Isaac SR-12iA mesh from
 `.cache/robot_assets/sr12ia/sr12ia_mesh.urdf`; this display-only choice does
@@ -374,7 +442,11 @@ model in that case.
 
 ## Computation/visualization split
 
-Visual meshes must not be loaded inside a base-optimization iteration. Resolve and load each robot once before the candidate loop. For UR20, `load_visual=False` keeps the kinematic model and collision STL geometry while omitting the DAE viewer model:
+Visual meshes must not be loaded inside a base-optimization iteration. Resolve
+and load each robot once before the candidate loop. The live UI follows the
+same rule: it loads evaluation bundles and display models once at startup, then
+serializes parameter evaluations. For UR20, `load_visual=False` keeps the
+kinematic model and collision STL geometry while omitting the DAE viewer model:
 
 ```python
 from decanting_workspace import SceneState, evaluate_base_candidate, load_scene_spec
