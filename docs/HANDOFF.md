@@ -89,7 +89,8 @@ Step 3과 4는 simultaneous mode에서 지정된 SR 절단 자세와 작업영�
 - local Cartesian 및 joint interpolation collision diagnostic
 - translational/normalized 6-D Jacobian SVD metric
 - candidate report와 finite case-grid precompute
-- cached `q`, collision, target, manipulability ellipsoid의 MeshCat UI replay
+- cached `q`, collision, target, solid/wireframe manipulability ellipsoid의
+  MeshCat UI replay
 - 임의의 단일 parameter set을 계산하고 최신 결과만 메모리에 보관하는
   MeshCat live evaluation UI
 - schema 기반 15개 live parameter control과 case 전체 `Calculated result`
@@ -247,7 +248,7 @@ conda run -n pinocchio-workspace python -m pytest
 conda run -n pinocchio-workspace decanting-setup
 ```
 
-2026-08-31 기준 통합 baseline은 `219 passed`, 기존 MeshCat/pyzmq deprecation
+2026-09-01 기준 통합 baseline은 `227 passed`, 기존 MeshCat/pyzmq deprecation
 warning 1건이다. 테스트 수는 기능 추가에 따라 바뀌므로 고정된 개수보다 전체
 suite가 성공하는지를 기준으로 한다.
 
@@ -278,7 +279,7 @@ conda run -n pinocchio-workspace decanting-playback `
   --open
 ```
 
-UI에서 최소한 step 1, 3, 5, 8을 선택해 robot 자세를 확인한다. UR20 suction이 각 `q`를 따라 이동하는지, 성공 sample에서 ellipsoid가 표시되는지, step 8이 기본적으로 `filled_tote_final_pose_at_supply`를 보여 주는지 확인한다.
+UI에서 최소한 step 1, 3, 5, 8을 선택해 robot 자세를 확인한다. UR20 suction이 각 `q`를 따라 이동하는지, 성공 sample에서 ellipsoid가 표시되는지, `Wireframe ellipsoid`를 켜고 끌 때 재계산 없이 표시가 바뀌는지, step 8이 기본적으로 `filled_tote_final_pose_at_supply`를 보여 주는지 확인한다.
 
 ### On-demand live MeshCat UI
 
@@ -301,7 +302,17 @@ corner, coordination, J3 stroke를 합친 15개 control이 표시된다. 최초 
 계산은 page 초기화 직후 자동 실행된다. `Calculated result`에는 evaluation
 ID/profile, cell feasibility, installation validity, HARD task 결과, SR workspace,
 case status가 표시되고, 별도 Task pose 영역은 최신 case의 step/check/sample을
-재계산 없이 선택한다.
+재계산 없이 선택한다. Ellipsoid 표시 여부, scale, 기본 꺼짐인 `Wireframe
+ellipsoid`도 Task pose의 display-only option이며 15개 계산 parameter에는
+포함되지 않는다.
+
+#### 2026-09-01 ellipsoid wireframe 표시 옵션
+
+Cached와 live UI는 동일한 `ellipsoid_wireframe` 요청 계약을 사용한다. 값은
+strict boolean이고 생략하면 `false`라서 기존 반투명 solid 표시를 유지한다.
+토글은 `/api/select`만 호출하며 IK, collision, manipulability를 다시 계산하지
+않는다. Renderer는 같은 solid/wireframe style에서 sphere geometry와 material을
+재사용하고, style이 바뀔 때만 material을 다시 생성한다.
 
 기본 `quick` profile은 `10 m`, `180°`, joint interior sample 0으로 끝점 중심의
 반응형 진단을 한다. 연속 collision-free path 결과가 아니다. `full` profile은
@@ -491,6 +502,8 @@ full path-sampled nominal cache는 훨씬 오래 걸리고 파일이 커질 수 
   case만 즉시 계산하는지 구분해 확인한다.
 - [ ] live control URL에서 15개 parameter와 `Calculated result`가 보이고,
   raw MeshCat `/static/` URL과 혼동하지 않는다.
+- [ ] cached/live UI의 `Wireframe ellipsoid`가 기본 꺼짐이고, 토글할 때 계산
+  없이 현재 ellipsoid의 solid/wireframe 표시만 바뀐다.
 - [ ] live UI의 quick/full 의미, 500 ms latest-only 직렬 계산, 비영속 결과를
   운영자에게 설명할 수 있다.
 - [ ] UR20 suction이 step pose를 따라 움직인다.

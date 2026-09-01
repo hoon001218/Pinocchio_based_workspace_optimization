@@ -285,7 +285,16 @@ cache. Continuous controls cover both robot base poses, lift height, tote
 offset, and clearance; SKU, pallet corner, coordination mode, and SR J3 stroke
 are explicit choices. After one evaluation, moving among its steps, checks,
 and samples only replays that latest in-memory result and does not recompute
-IK.
+IK. The Task pose panel also has an unchecked `Wireframe ellipsoid` control;
+toggling it, ellipsoid visibility, or scale only selects a new display state
+and does not run another evaluation. These display controls are separate from
+the 15 calculation parameters.
+
+Both live and cached selection APIs accept `ellipsoid_wireframe` as a strict
+JSON boolean. It defaults to `false`, preserving the translucent solid style.
+An unchanged style reuses the existing sphere geometry and material; switching
+between solid and wireframe rebuilds the display material but does not repeat
+the calculation.
 
 The page starts with automatic calculation enabled. Parameter edits are
 debounced for 500 ms, only one calculation runs at a time, and edits made
@@ -417,8 +426,11 @@ Selecting a case, process step, check, or sample performs an exact immutable
 cache lookup; it never invokes the live evaluator. A
 successful sample displays the stored robot configuration and the
 translational ellipsoid reconstructed from its cached World-aligned SVD
-directions and singular values. A failed IK sample shows its best diagnostic
-configuration with a red target frame but hides the ellipsoid. Step 6 retains
+directions and singular values. The unchecked `Wireframe ellipsoid` control
+switches that display between translucent solid and wireframe through a cache
+selection only; it never invokes IK or recomputes manipulability. A failed IK
+sample shows its best diagnostic configuration with a red target frame but
+hides the ellipsoid. Step 6 retains
 the previous successful posture and is labelled as having no pose check.
 
 Robot visual models are loaded only once. The default playback UI uses the pinned,

@@ -131,6 +131,10 @@ class CachedPlaybackBackend:
                 "ellipsoid_scale",
             ),
             show_ellipsoid=_boolean(request.get("show_ellipsoid", True), "show_ellipsoid"),
+            ellipsoid_wireframe=_boolean(
+                request.get("ellipsoid_wireframe", False),
+                "ellipsoid_wireframe",
+            ),
         )
         pose_kind = "cached_feasible"
         if self.presenter is not None:

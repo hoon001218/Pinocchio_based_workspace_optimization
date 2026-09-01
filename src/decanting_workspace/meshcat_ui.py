@@ -238,6 +238,7 @@ button {{ cursor: pointer; background: #2d5f8b; border-color: #3976aa; font-weig
       <label>Sample <select id="sample"></select></label>
       <label>Ellipsoid scale <input id="ellipsoidScale" type="range" min="0.02" max="0.5" step="0.01" value="0.15"></label>
       <label><span>Ellipsoid</span><input id="showEllipsoid" type="checkbox" checked></label>
+      <label><span>Wireframe ellipsoid</span><input id="ellipsoidWireframe" type="checkbox"></label>
       <div class="row"><button id="previous" type="button">Previous step</button><button id="next" type="button">Next step</button></div>
     </fieldset>
     <p class="muted">슬라이더와 직접 입력은 cache에 미리 계산된 정확한 값만 선택합니다. 없는 값은 case grid에 추가한 뒤 precompute해야 합니다.</p>
@@ -335,7 +336,7 @@ function populateSamples() {{
 async function submitSelection() {{
   if (!activeCase) return;
   const serial = ++requestSerial;
-  const request={{case_id:activeCase.id,step_index:Number(stepSelect.value),check_index:checkSelect.disabled?null:Number(checkSelect.value),sample_index:sampleSelect.disabled?null:Number(sampleSelect.value),ellipsoid_scale:Number(document.getElementById("ellipsoidScale").value),show_ellipsoid:document.getElementById("showEllipsoid").checked}};
+  const request={{case_id:activeCase.id,step_index:Number(stepSelect.value),check_index:checkSelect.disabled?null:Number(checkSelect.value),sample_index:sampleSelect.disabled?null:Number(sampleSelect.value),ellipsoid_scale:Number(document.getElementById("ellipsoidScale").value),show_ellipsoid:document.getElementById("showEllipsoid").checked,ellipsoid_wireframe:document.getElementById("ellipsoidWireframe").checked}};
   try {{
     const response=await fetch("/api/select",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify(request)}});
     const result=await response.json(); if(!response.ok) throw new Error(result.message || result.error); if(serial!==requestSerial)return;
@@ -352,6 +353,7 @@ checkSelect.addEventListener("change",()=>{{populateSamples();submitSelection();
 sampleSelect.addEventListener("change",submitSelection);
 document.getElementById("ellipsoidScale").addEventListener("change",submitSelection);
 document.getElementById("showEllipsoid").addEventListener("change",submitSelection);
+document.getElementById("ellipsoidWireframe").addEventListener("change",submitSelection);
 document.getElementById("previous").addEventListener("click",()=>{{stepSelect.selectedIndex=Math.max(0,stepSelect.selectedIndex-1);populateChecks();submitSelection();}});
 document.getElementById("next").addEventListener("click",()=>{{stepSelect.selectedIndex=Math.min(stepSelect.options.length-1,stepSelect.selectedIndex+1);populateChecks();submitSelection();}});
 fetch("/api/catalog").then(r=>r.json()).then(data=>{{

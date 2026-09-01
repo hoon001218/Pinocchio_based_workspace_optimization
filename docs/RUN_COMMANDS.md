@@ -158,6 +158,11 @@ IK를 다시 계산하지 않는다. 숫자 파라미터는 슬라이더와 직�
 cache에 없으면 오류와 사용 가능한 값 목록을 표시한다. 새 값을 사용하려면
 해당 case-grid YAML에 값을 추가하고 `decanting-precompute`를 다시 실행한다.
 
+Task pose의 `Wireframe ellipsoid`를 켜면 현재 ellipsoid를 wireframe으로,
+끄면 반투명 solid로 표시한다. 기본값은 꺼짐이다. 표시 여부, scale,
+wireframe 변경은 현재 cached sample에 `/api/select`만 적용하므로 IK나 cache를
+다시 계산하지 않는다.
+
 기본 working cache는 검증된 성공 배치를 빠르게 여는 용도라서 UR/SR base,
 lift, tote offset, J3가 각각 한 값뿐이다. 이 축의 slider가 비활성화되는 것은
 정상이다. SKU, corner와 coordination mode는 복수 선택할 수 있다.
@@ -220,6 +225,12 @@ sample을 바꾸는 동작은 최신 메모리 결과를 재생하며 IK를 다�
 상자에 evaluation 번호/profile, `Cell feasible`, `Installation valid`, `Hard
 task checks`, `SR workspace`, case status가 표시된다. Task pose의 step/check/
 sample 결과는 이 case 전체 요약과 별도로 아래 status 상자에 표시된다.
+
+Task pose에는 기본적으로 꺼진 `Wireframe ellipsoid`가 있다. 이를 켜거나 끄면
+최신 sample을 각각 wireframe 또는 solid로 다시 표시하며 live evaluation은
+실행하지 않는다. Ellipsoid 표시 여부와 scale도 같은 display-only 선택이다.
+API의 `ellipsoid_wireframe`은 생략 시 `false`이고 boolean 이외의 값은 거부한다.
+따라서 위 15개 계산 parameter 개수에는 이 세 시각화 control이 포함되지 않는다.
 
 UI의 **Auto calculate**는 기본으로 켜져 있다. 연속 slider, 숫자 입력, choice를
 바꾸면 500 ms debounce 후 계산한다. 계산은 항상 한 번에 하나씩 직렬로

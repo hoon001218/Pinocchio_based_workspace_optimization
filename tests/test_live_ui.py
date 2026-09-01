@@ -26,6 +26,8 @@ def test_page_contains_live_parameter_and_meshcat_controls():
     assert 'id="sample"' in page
     assert 'id="ellipsoidScale"' in page
     assert 'id="showEllipsoid"' in page
+    assert 'id="ellipsoidWireframe" type="checkbox"' in page
+    assert 'id="ellipsoidWireframe" type="checkbox" checked' not in page
 
 
 def test_page_consumes_flat_catalog_schema_and_builds_both_parameter_kinds():
@@ -54,7 +56,11 @@ def test_page_posts_exact_live_evaluation_contract_and_replays_nested_selection(
     assert "const profile = selectedProfile();" in page
     assert "const ellipsoid_scale = Number(ellipsoidScale.value);" in page
     assert "const show_ellipsoid = showEllipsoid.checked;" in page
-    assert "return {parameters, profile, ellipsoid_scale, show_ellipsoid};" in page
+    assert "const ellipsoid_wireframe = ellipsoidWireframe.checked;" in page
+    assert (
+        "return {parameters, profile, ellipsoid_scale, show_ellipsoid, "
+        "ellipsoid_wireframe};" in page
+    )
     assert 'postJson("/api/evaluate", payload)' in page
     assert "result.case" in page
     assert "result.selection" in page
@@ -71,6 +77,7 @@ def test_page_posts_exact_live_evaluation_contract_and_replays_nested_selection(
     assert re.search(r"step_index:\s*stepSelect\.disabled", page)
     assert re.search(r"check_index:\s*checkSelect\.disabled", page)
     assert re.search(r"sample_index:\s*sampleSelect\.disabled", page)
+    assert "ellipsoid_wireframe: ellipsoidWireframe.checked" in page
 
 
 def test_page_debounces_and_keeps_only_latest_queued_evaluation():
@@ -96,6 +103,14 @@ def test_page_debounces_and_keeps_only_latest_queued_evaluation():
     assert "showProfileDescription();" in page
     assert "entry.description" in page
     assert 'evaluateButton.addEventListener("click"' in page
+    assert (
+        'ellipsoidWireframe.addEventListener("change", scheduleSelection)'
+        in page
+    )
+    assert (
+        'ellipsoidWireframe.addEventListener("change", scheduleParameterEvaluation)'
+        not in page
+    )
     assert re.search(
         r'catch \(error\) \{\s*setStatus\("failed", `입력 오류:.*?setBusy\(false\);',
         page,
@@ -104,6 +119,33 @@ def test_page_debounces_and_keeps_only_latest_queued_evaluation():
     assert "selectionVersion += 1;" in page
     assert "version === selectionVersion" in page
     assert "payload.case_id === activeCase?.id" in page
+    assert re.search(
+        r"function scheduleSelection\(\).*?"
+        r"if \(evaluationInFlight \|\| evaluationTimer !== null\)\s*\{"
+        r"\s*selectionRerunRequested = true;",
+        page,
+        re.DOTALL,
+    )
+    assert re.search(
+        r"setBusy\(false\);\s*if \(selectionRerunRequested\)\s*\{"
+        r"\s*selectionRerunRequested = false;\s*enqueueSelection\(\);",
+        page,
+        re.DOTALL,
+    )
+    assert re.search(
+        r"function scheduleParameterEvaluation\(\)\s*\{\s*"
+        r"if \(!autoEvaluate\.checked\).*?return;\s*\}\s*"
+        r"clearTimeout\(selectionTimer\);",
+        page,
+        re.DOTALL,
+    )
+    assert re.search(
+        r"const replayPending = selectionRerunRequested;\s*"
+        r"selectionRerunRequested = false;\s*"
+        r"if \(replayPending\) scheduleSelection\(\);",
+        page,
+        re.DOTALL,
+    )
 
 
 @pytest.mark.parametrize("url", ("file:///tmp/a", "not-a-url", "ftp://localhost/x"))

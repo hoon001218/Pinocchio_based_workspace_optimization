@@ -115,6 +115,7 @@ def test_step_displays_q_and_world_lwa_translational_ellipsoid(
     )
     assert np.linalg.det(transform[:3, :3]) > 0.0
     assert len(node.object_calls) == 1
+    assert node.object_calls[-1][1][0].wireframe is False
     assert node.properties[-1] == ("visible", True)
 
 
@@ -141,6 +142,37 @@ def test_multiple_steps_update_robot_and_reuse_sphere_geometry(
     assert len(node.object_calls) == 1
     assert len(node.transforms) == 2
     assert not np.allclose(node.transforms[0], node.transforms[1])
+
+
+def test_cached_step_switches_wireframe_material_and_reuses_matching_style(
+    ur20_playback_assets,
+):
+    _, q = ur20_playback_assets
+    playback, viewer, _ = _playback(ur20_playback_assets)
+    render = {
+        "tcp_position_m": (0.1, 0.2, 0.3),
+        "axis_lengths": (3.0, 2.0, 1.0),
+        "axis_directions_world": np.eye(3),
+    }
+
+    playback.show_cached_step(q, **render, ellipsoid_wireframe=False)
+    node = viewer.nodes[playback.ellipsoid_path]
+    assert len(node.object_calls) == 1
+    assert node.object_calls[-1][1][0].wireframe is False
+
+    playback.show_cached_step(q, **render, ellipsoid_wireframe=False)
+    assert len(node.object_calls) == 1
+
+    playback.show_cached_step(q, **render, ellipsoid_wireframe=True)
+    assert len(node.object_calls) == 2
+    assert node.object_calls[-1][1][0].wireframe is True
+
+    playback.show_cached_step(q, **render, ellipsoid_wireframe=True)
+    assert len(node.object_calls) == 2
+
+    playback.show_cached_step(q, **render, ellipsoid_wireframe=False)
+    assert len(node.object_calls) == 3
+    assert node.object_calls[-1][1][0].wireframe is False
 
 
 def test_display_callback_receives_every_displayed_configuration(
@@ -374,6 +406,7 @@ def test_invalid_configuration_hides_ellipsoid_before_raising(
         ("ellipsoid_scale", math.inf),
         ("singular_tolerance", -1.0),
         ("opacity", 0.0),
+        ("ellipsoid_wireframe", 1),
     ),
 )
 def test_invalid_render_settings_are_rejected(

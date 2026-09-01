@@ -125,6 +125,10 @@ class LiveEvaluationBackend:
             request.get("show_ellipsoid", True),
             "show_ellipsoid",
         )
+        ellipsoid_wireframe = _boolean(
+            request.get("ellipsoid_wireframe", False),
+            "ellipsoid_wireframe",
+        )
 
         profile = self.profiles[profile_id]
         started = self.clock()
@@ -160,6 +164,7 @@ class LiveEvaluationBackend:
                 "case_id": case_id,
                 "ellipsoid_scale": ellipsoid_scale,
                 "show_ellipsoid": show_ellipsoid,
+                "ellipsoid_wireframe": ellipsoid_wireframe,
             }
         )
         elapsed = self.clock() - started

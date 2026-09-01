@@ -41,6 +41,7 @@ class PlaybackPort(Protocol):
         successful: bool = True,
         visible: bool = True,
         ellipsoid_scale: float | None = None,
+        ellipsoid_wireframe: bool | None = None,
     ) -> object: ...
 
     def hide_ellipsoid(self) -> None: ...
@@ -167,6 +168,7 @@ class PrecomputedPlaybackController:
         sample_index: int | None = None,
         ellipsoid_scale: float | None = None,
         show_ellipsoid: bool = True,
+        ellipsoid_wireframe: bool = False,
     ) -> PlaybackSelection:
         """Select and optionally display one cached pose sample.
 
@@ -255,6 +257,7 @@ class PrecomputedPlaybackController:
                 successful=True,
                 visible=bool(show_ellipsoid),
                 ellipsoid_scale=ellipsoid_scale,
+                ellipsoid_wireframe=ellipsoid_wireframe,
             )
             ellipsoid_visible = bool(
                 getattr(render, "ellipsoid_visible", False)

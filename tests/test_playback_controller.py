@@ -50,6 +50,7 @@ class _FakePlayback:
         successful: bool = True,
         visible: bool = True,
         ellipsoid_scale: float | None = None,
+        ellipsoid_wireframe: bool | None = None,
     ) -> _FakeRender:
         self.show_calls.append(
             (
@@ -62,6 +63,7 @@ class _FakePlayback:
                     "successful": successful,
                     "visible": visible,
                     "ellipsoid_scale": ellipsoid_scale,
+                    "ellipsoid_wireframe": ellipsoid_wireframe,
                 },
             )
         )
@@ -445,11 +447,13 @@ def test_controller_forwards_ui_ellipsoid_controls(cached_cases):
         step_index=1,
         ellipsoid_scale=0.27,
         show_ellipsoid=False,
+        ellipsoid_wireframe=True,
     )
 
     options = playback.show_calls[0][1]
     assert options["ellipsoid_scale"] == pytest.approx(0.27)
     assert options["visible"] is False
+    assert options["ellipsoid_wireframe"] is True
     assert not result.ellipsoid_visible
 
 
@@ -554,6 +558,7 @@ def test_backend_selection_forwards_visual_controls_and_formats_status(cached_ca
             "sample_index": 1,
             "ellipsoid_scale": 0.31,
             "show_ellipsoid": True,
+            "ellipsoid_wireframe": True,
         }
     )
     backend.select(
@@ -569,8 +574,30 @@ def test_backend_selection_forwards_visual_controls_and_formats_status(cached_ca
     assert presenter.prepared == [evaluated]
     assert len(presenter.presented) == 2
     assert playback.show_calls[0][1]["ellipsoid_scale"] == pytest.approx(0.31)
+    assert playback.show_calls[0][1]["ellipsoid_wireframe"] is True
+    assert playback.show_calls[1][1]["ellipsoid_wireframe"] is False
     assert payload["pose_kind"] == "cached_test_pose"
     assert payload["step_status"] == "failed"
     assert payload["ik_status"] == "success"
     assert "Translational sigma" in payload["status_text"]
     json.dumps(payload, allow_nan=False)
+
+
+@pytest.mark.parametrize("value", ("true", 1, None))
+def test_backend_rejects_non_boolean_wireframe(cached_cases, value):
+    cache, evaluated, _ = cached_cases
+    playback = _FakePlayback()
+    backend = CachedPlaybackBackend(
+        cache,
+        PrecomputedPlaybackController(cache, playback),
+    )
+
+    with pytest.raises(ValueError, match="ellipsoid_wireframe must be a boolean"):
+        backend.select(
+            {
+                "case_id": evaluated.key.stable_id,
+                "ellipsoid_wireframe": value,
+            }
+        )
+
+    assert playback.show_calls == []

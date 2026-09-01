@@ -83,6 +83,7 @@ input[type="checkbox"] { width: auto; justify-self: start; }
       <label>Sample <select id="sample"></select></label>
       <label>Ellipsoid scale <span class="numeric-control"><input id="ellipsoidScale" type="range" min="0.02" max="0.5" step="0.01" value="0.15"><output id="ellipsoidScaleValue">0.15</output><span class="unit"></span></span></label>
       <label><span>Show ellipsoid</span><input id="showEllipsoid" type="checkbox" checked></label>
+      <label><span>Wireframe ellipsoid</span><input id="ellipsoidWireframe" type="checkbox"></label>
     </fieldset>
     <fieldset>
       <legend>Calculated result</legend>
@@ -109,6 +110,7 @@ const sampleSelect = document.getElementById("sample");
 const ellipsoidScale = document.getElementById("ellipsoidScale");
 const ellipsoidScaleValue = document.getElementById("ellipsoidScaleValue");
 const showEllipsoid = document.getElementById("showEllipsoid");
+const ellipsoidWireframe = document.getElementById("ellipsoidWireframe");
 const busyNode = document.getElementById("busy");
 const elapsedNode = document.getElementById("elapsed");
 const evaluationSummary = document.getElementById("evaluationSummary");
@@ -200,12 +202,12 @@ function showProfileDescription() {
 }
 
 function scheduleParameterEvaluation() {
-  clearTimeout(selectionTimer);
-  selectionTimer = null;
   if (!autoEvaluate.checked) {
     setStatus("skipped", "파라미터가 변경되었습니다. Calculate now를 누르세요.");
     return;
   }
+  clearTimeout(selectionTimer);
+  selectionTimer = null;
   clearTimeout(evaluationTimer);
   evaluationTimer = setTimeout(() => {
     evaluationTimer = null;
@@ -320,7 +322,8 @@ function evaluationPayload() {
   const profile = selectedProfile();
   const ellipsoid_scale = Number(ellipsoidScale.value);
   const show_ellipsoid = showEllipsoid.checked;
-  return {parameters, profile, ellipsoid_scale, show_ellipsoid};
+  const ellipsoid_wireframe = ellipsoidWireframe.checked;
+  return {parameters, profile, ellipsoid_scale, show_ellipsoid, ellipsoid_wireframe};
 }
 
 async function postJson(path, payload) {
@@ -395,6 +398,10 @@ async function evaluateLatest() {
       void evaluateLatest();
     } else {
       setBusy(false);
+      if (selectionRerunRequested) {
+        selectionRerunRequested = false;
+        enqueueSelection();
+      }
     }
   }
 }
@@ -462,6 +469,7 @@ function selectionPayload() {
     sample_index: sampleSelect.disabled ? null : Number(sampleSelect.value),
     ellipsoid_scale: Number(ellipsoidScale.value),
     show_ellipsoid: showEllipsoid.checked,
+    ellipsoid_wireframe: ellipsoidWireframe.checked,
   };
 }
 
@@ -472,7 +480,11 @@ function showSelection(selection) {
 }
 
 function scheduleSelection() {
-  if (!activeCase || evaluationInFlight || evaluationTimer !== null) return;
+  if (evaluationInFlight || evaluationTimer !== null) {
+    selectionRerunRequested = true;
+    return;
+  }
+  if (!activeCase) return;
   clearTimeout(selectionTimer);
   selectionTimer = setTimeout(() => {
     selectionTimer = null;
@@ -523,6 +535,7 @@ profileSelect.addEventListener("change", () => {
 ellipsoidScale.addEventListener("input", () => { ellipsoidScaleValue.value = ellipsoidScale.value; });
 ellipsoidScale.addEventListener("change", scheduleSelection);
 showEllipsoid.addEventListener("change", scheduleSelection);
+ellipsoidWireframe.addEventListener("change", scheduleSelection);
 evaluateButton.addEventListener("click", () => {
   clearTimeout(evaluationTimer);
   evaluationTimer = null;
@@ -536,6 +549,9 @@ autoEvaluate.addEventListener("change", () => {
     clearTimeout(evaluationTimer);
     evaluationTimer = null;
     evaluationRerunRequested = false;
+    const replayPending = selectionRerunRequested;
+    selectionRerunRequested = false;
+    if (replayPending) scheduleSelection();
   }
 });
 

@@ -54,6 +54,7 @@ class UR20MeshcatPlayback:
         singular_tolerance: float = 1.0e-8,
         color: int = 0x35B779,
         opacity: float = 0.34,
+        ellipsoid_wireframe: bool = False,
         on_configuration_displayed: Callable[[np.ndarray], object] | None = None,
     ) -> None:
         self.viewer = viewer
@@ -79,12 +80,17 @@ class UR20MeshcatPlayback:
             raise ValueError("ellipsoid_path must not be empty")
         self.color = color
         self.opacity = float(opacity)
+        self.ellipsoid_wireframe = _boolean(
+            ellipsoid_wireframe,
+            "ellipsoid_wireframe",
+        )
         if on_configuration_displayed is not None and not callable(
             on_configuration_displayed
         ):
             raise TypeError("on_configuration_displayed must be callable")
         self.on_configuration_displayed = on_configuration_displayed
         self._object_initialized = False
+        self._object_wireframe: bool | None = None
 
     def display_configuration(
         self,
@@ -198,6 +204,7 @@ class UR20MeshcatPlayback:
         successful: bool = True,
         visible: bool = True,
         ellipsoid_scale: float | None = None,
+        ellipsoid_wireframe: bool | None = None,
     ) -> PlaybackRenderResult:
         """Display a configuration using precomputed Pinocchio SVD data.
 
@@ -266,7 +273,18 @@ class UR20MeshcatPlayback:
             if ellipsoid_scale is None
             else _positive_finite(ellipsoid_scale, "ellipsoid_scale")
         )
-        if not self._show_ellipsoid(position, orientation, lengths, scale):
+        wireframe = (
+            self.ellipsoid_wireframe
+            if ellipsoid_wireframe is None
+            else _boolean(ellipsoid_wireframe, "ellipsoid_wireframe")
+        )
+        if not self._show_ellipsoid(
+            position,
+            orientation,
+            lengths,
+            scale,
+            wireframe,
+        ):
             return PlaybackRenderResult(
                 step_name=name,
                 robot_displayed=True,
@@ -288,8 +306,8 @@ class UR20MeshcatPlayback:
 
         self.viewer[self.ellipsoid_path].set_property("visible", False)
 
-    def _ensure_ellipsoid_object(self, node: object) -> None:
-        if self._object_initialized:
+    def _ensure_ellipsoid_object(self, node: object, *, wireframe: bool) -> None:
+        if self._object_initialized and self._object_wireframe == wireframe:
             return
         import meshcat.geometry as geometry
 
@@ -299,9 +317,11 @@ class UR20MeshcatPlayback:
                 color=self.color,
                 opacity=self.opacity,
                 transparent=self.opacity < 1.0,
+                wireframe=wireframe,
             ),
         )
         self._object_initialized = True
+        self._object_wireframe = wireframe
 
     def _configuration(
         self,
@@ -328,6 +348,7 @@ class UR20MeshcatPlayback:
         orientation: np.ndarray,
         singular_values: np.ndarray,
         scale: float,
+        wireframe: bool | None = None,
     ) -> bool:
         world_axes = np.asarray(orientation, dtype=float).reshape(3, 3).copy()
         # SVD axis signs are arbitrary.  Select a proper right-handed frame so
@@ -341,7 +362,8 @@ class UR20MeshcatPlayback:
             self.hide_ellipsoid()
             return False
         node = self.viewer[self.ellipsoid_path]
-        self._ensure_ellipsoid_object(node)
+        style = self.ellipsoid_wireframe if wireframe is None else wireframe
+        self._ensure_ellipsoid_object(node, wireframe=style)
         node.set_transform(transform)
         node.set_property("visible", True)
         return True
@@ -355,3 +377,9 @@ def _positive_finite(value: float, name: str) -> float:
     if not math.isfinite(result) or result <= 0.0:
         raise ValueError(f"{name} must be finite and positive")
     return result
+
+
+def _boolean(value: object, name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{name} must be a boolean")
+    return value

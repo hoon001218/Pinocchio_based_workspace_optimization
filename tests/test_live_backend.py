@@ -246,6 +246,7 @@ def test_evaluate_maps_parameters_to_one_case_and_activates_selection(spec):
             "profile": "fast",
             "ellipsoid_scale": 0.23,
             "show_ellipsoid": False,
+            "ellipsoid_wireframe": True,
         }
     )
 
@@ -298,6 +299,7 @@ def test_evaluate_maps_parameters_to_one_case_and_activates_selection(spec):
             "case_id": "case-1",
             "ellipsoid_scale": 0.23,
             "show_ellipsoid": False,
+            "ellipsoid_wireframe": True,
         }
     ]
     assert result["evaluation_id"] == 1
@@ -320,6 +322,7 @@ def test_select_reuses_latest_evaluation_without_precomputing_again(spec):
         "sample_index": 2,
         "ellipsoid_scale": 0.19,
         "show_ellipsoid": True,
+        "ellipsoid_wireframe": False,
     }
 
     selected = harness.backend.select(request)
@@ -402,3 +405,20 @@ def test_evaluate_requires_parameters_object_and_known_profile(spec):
         )
 
     assert harness.precomputer.calls == []
+    assert harness.backend_factory.calls == []
+
+
+@pytest.mark.parametrize("value", ("true", 1, None))
+def test_evaluate_rejects_non_boolean_wireframe_before_precompute(spec, value):
+    harness = _harness(spec)
+
+    with pytest.raises(ValueError, match="ellipsoid_wireframe must be a boolean"):
+        harness.backend.evaluate(
+            {
+                "parameters": _parameters(harness.backend),
+                "ellipsoid_wireframe": value,
+            }
+        )
+
+    assert harness.precomputer.calls == []
+    assert harness.backend_factory.calls == []

@@ -98,8 +98,8 @@ source도 원래 개발 PC의 절대 경로를 요구해서는 안 된다.
 | `precompute_cli.py` | grid 기반 batch 계산 entry point |
 | `candidate_cli.py` | 단일 후보 compact report entry point |
 | `viewer.py` | scene와 robot MeshCat rendering, suction proxy 추종 |
-| `meshcat_playback.py` | cached q와 ellipsoid 표시 |
-| `playback_controller.py` | exact case/step/check/sample 선택 |
+| `meshcat_playback.py` | cached q와 ellipsoid 표시, solid/wireframe material 전환 |
+| `playback_controller.py` | exact case/step/check/sample과 display-only option 선택 |
 | `playback_backend.py` | cache selection과 scene/viewer 연결, display model 계약 검증 |
 | `meshcat_ui.py` | 직렬화된 local HTTP catalog/select/evaluate server, Windows control-port 배타 바인딩 |
 | `playback_cli.py` | portable cache 검증과 immutable playback server entry point |
@@ -307,6 +307,14 @@ Cache에는 UI 재생에 필요한 다음 정보가 들어 있다.
 
 `playback_controller.py`는 exact case → step → check → sample 선택을 해석한다. `playback_backend.py`는 선택된 case로 scene primitive를 갱신하고 cached `q`를 표시한다. `meshcat_playback.py`는 ellipsoid를 복원하고, `meshcat_ui.py`는 local HTTP control page를 제공한다.
 
+Cached와 live control page의 Task pose 영역은 ellipsoid 표시 여부, scale,
+wireframe을 공통으로 제어한다. `Wireframe ellipsoid`는 기본적으로 꺼져 있어
+기존 반투명 solid 표시를 유지한다. JSON API의 `ellipsoid_wireframe`은 기본값이
+`false`인 strict boolean이며 계산 parameter가 아닌 display-only option이다.
+변경 요청은 `/api/select`로 현재 sample을 다시 표시할 뿐 IK, collision,
+manipulability를 다시 계산하지 않는다. 같은 style은 기존 sphere geometry와
+material을 재사용하고, solid/wireframe style이 바뀔 때만 material을 다시 만든다.
+
 Robot mesh는 UI 시작 시 한 번만 로드된다. 실패한 IK sample은 diagnostic configuration과 target frame을 표시할 수 있지만 feasible pose로 취급하지 않으며 ellipsoid를 숨긴다. Step 6은 이전 성공 자세를 유지하면서 pose check가 없음을 표시한다.
 
 ### 6.1 On-demand live evaluation
@@ -328,8 +336,9 @@ precomputed cache를 읽지 않고 새 cache 파일도 쓰지 않는다.
    이 결과를 재생하며 다시 평가하지 않는다.
 
 브라우저 초기화 계약은 `GET /api/catalog` → profile 생성 → parameter control
-생성 → 최초 `/api/evaluate` 순서다. Catalog는 다음 15개 입력을 flat schema와
-초기값으로 제공한다.
+생성 → 최초 `/api/evaluate` 순서다. Catalog는 다음 15개 계산 입력을 flat
+schema와 초기값으로 제공한다. Ellipsoid 표시, scale, wireframe은 이 수에
+포함되지 않는 display-only control이다.
 
 - UR20/SR-12iA 각각의 `x`, `y`, `z`, `yaw`
 - SKU, lift height, tote offset, clearance

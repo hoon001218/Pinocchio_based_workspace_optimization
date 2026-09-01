@@ -57,6 +57,13 @@ def test_page_contains_parameter_step_and_meshcat_controls():
     assert 'data-key="sku"' in page
     assert 'id="step"' in page
     assert 'id="ellipsoidScale"' in page
+    assert 'id="ellipsoidWireframe" type="checkbox"' in page
+    assert "ellipsoid_wireframe" in page
+    assert (
+        'document.getElementById("ellipsoidWireframe").addEventListener('
+        '"change",submitSelection)'
+        in page
+    )
     assert 'id="cacheSummary"' in page
     assert "data.default_case_id" in page
     assert 'fetch("/api/catalog")' in page
