@@ -26,7 +26,7 @@ from .viewer import CellViewer
 
 @dataclass(frozen=True)
 class PlaybackDependencies:
-    spec_loader: Callable[[str | Path | None], SceneSpec]
+    spec_loader: Callable[..., SceneSpec]
     cache_loader: Callable[..., PrecomputedCache]
     official_ur20_resolver: Callable[..., tuple[Path, tuple[Path, ...]]]
     viewer_factory: Callable[[], CellViewer]
@@ -44,6 +44,14 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument("--config", type=Path, default=default_config_path())
+    parser.add_argument(
+        "--usd",
+        type=Path,
+        help=(
+            "Read environment geometry directly from a local USD/USDA/USDC "
+            "scene; task and robot settings still come from --config."
+        ),
+    )
     parser.add_argument(
         "--cache",
         type=Path,
@@ -107,7 +115,11 @@ def main(
     deps = dependencies or _default_dependencies()
     server = None
     try:
-        source_spec = deps.spec_loader(args.config)
+        source_spec = (
+            deps.spec_loader(args.config)
+            if args.usd is None
+            else deps.spec_loader(args.config, usd_path=args.usd)
+        )
         urdf = args.ur20_urdf
         package_dirs: tuple[Path, ...] = ()
         if urdf is None and args.ur20_source == "official":

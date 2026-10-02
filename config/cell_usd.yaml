@@ -1,0 +1,35 @@
+# Keep task frames, SKU dimensions, robot URDFs and candidate bounds in the
+# nominal configuration. Replace only fixed environment geometry from USD.
+base_config: cell_nominal.yaml
+
+usd_scene:
+  file: ../USD/cu_usd_simplified.usd
+  include_prim_paths: [/World]
+  exclude_prim_paths:
+    # A World Z=0 floor is already synthesized by the runtime.
+    - /World/GroundPlane
+    # Robot assemblies/pedestals are generated from the configured URDF/base.
+    - /World/LoadGroup/RB
+    - /World/UncaseGroup/RB
+    # These SR cameras/supports already follow the configured robot module.
+    - /World/UncaseGroup/UncasingLoadFrame/Camera
+    # Missing camera assets: retain the fixed support meshes beside them.
+    - /World/PalletGroup/Camera/rsd455
+    - /World/ToteGroup/Camera/rsd455_03
+    # Pallet and corner samples are generated from real SKU/lift parameters.
+    - /World/PalletGroup/Cube
+    - /World/PalletGroup/Cube_01
+    - /World/PalletGroup/Cube_02
+    - /World/PalletGroup/Cube_03
+    - /World/PalletGroup/Cube_04
+  box_prims:
+    conveyor_level_1: /World/ConveyorGroup/Conv3
+    conveyor_level_2: /World/ConveyorGroup/Conv2
+    conveyor_level_3: /World/ConveyorGroup/Conv1
+    worktable_far_a: /World/ToteGroup/Conv4A
+    worktable_far_b: /World/ToteGroup/Conv4B
+    worktable_current_a: /World/ToteGroup/Conv5A
+    worktable_current_b: /World/ToteGroup/Conv5B
+    pallet_camera_pole: /World/PalletGroup/Camera/Cube
+    pallet_camera_arm: /World/PalletGroup/Camera/Cube_01
+    tote_camera_pole: /World/ToteGroup/Camera/Cube

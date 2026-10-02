@@ -23,7 +23,7 @@ UR20은 Pinocchio의 고정-base IK, Coal 충돌 검사, Jacobian 기반 manipul
 - 최종 base 탐색 범위 및 간격
 - 전역 motion planning과 실제 controller 실행
 
-Isaac Sim, ROS, MoveIt은 실행 의존성이 아니다. `cu_usd_simplified.usd`와 `BGF`는 환경 치수와 좌표계의 provenance로만 남아 있으며, 계산 시점의 source of truth는 `config/`이다.
+Isaac Sim, ROS, MoveIt은 실행 의존성이 아니다. 기본 실행에서는 `cu_usd_simplified.usd`와 `BGF`를 provenance로 두고 `config/`를 읽는다. `--usd` 또는 `usd_scene`을 지정하면 `usd_scene.py`가 선택한 USD 환경을 World metre 삼각형 `MeshObstacle`로 읽어 고정 환경의 표시·충돌 형상을 대체한다. 공정 frame, URDF와 이동 물체는 config를 유지한다. 선택적인 `box_prims` 연결은 공정 지지면의 경계 치수와 논리 접촉 이름을 USD와 동기화한다. 상세 사용법은 [USD_SCENES.md](USD_SCENES.md)를 참고한다.
 
 ## 2. 핵심 계약
 
@@ -59,6 +59,7 @@ Isaac Sim, ROS, MoveIt은 실행 의존성이 아니다. `cu_usd_simplified.usd`
 | --- | --- |
 | `config/cell_nominal.yaml` | 환경 치수, SKU, tote, pedestal, robot nominal pose와 SR 작업영역의 authoritative config |
 | `config/reference_frames.json` | World 기준 공정 frame |
+| `src/decanting_workspace/usd_scene.py` | 선택적인 일반 USD 환경 import, 변환/단위/instance 처리와 공정 지지면 연결 |
 | `config/case_grid_*.yaml` | 유한 precompute Cartesian product |
 | `assets/robots/ur20/official/` | Git에 포함되는 공식 UR20 URDF, visual/collision mesh, license, provenance |
 | `assets/robots/ur20/ur20_primitive.urdf` | offline 진단용 mesh-free fallback |

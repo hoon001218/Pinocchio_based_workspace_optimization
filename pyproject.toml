@@ -20,6 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8,<10"]
 fanuc-asset-prep = ["usd-core==25.11"]
+usd-scene = ["usd-core==25.11"]
 
 [project.scripts]
 decanting-view = "decanting_workspace.cli:main"

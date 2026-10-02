@@ -36,7 +36,7 @@ from .viewer import CellViewer
 class LiveDependencies:
     """Injectable I/O and heavyweight construction boundary for :func:`main`."""
 
-    spec_loader: Callable[[str | Path | None], SceneSpec]
+    spec_loader: Callable[..., SceneSpec]
     grid_loader: Callable[[str | Path], CaseGrid]
     official_ur20_resolver: Callable[..., tuple[Path, tuple[Path, ...]]]
     robot_loader: Callable[..., RobotBundle]
@@ -55,6 +55,14 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument("--config", type=Path, default=default_config_path())
+    parser.add_argument(
+        "--usd",
+        type=Path,
+        help=(
+            "Read environment geometry directly from a local USD/USDA/USDC "
+            "scene; task and robot settings still come from --config."
+        ),
+    )
     parser.add_argument(
         "--initial-grid",
         type=Path,
@@ -179,7 +187,11 @@ def main(
     deps = dependencies or _default_dependencies()
     server = None
     try:
-        source_spec = deps.spec_loader(args.config)
+        source_spec = (
+            deps.spec_loader(args.config)
+            if args.usd is None
+            else deps.spec_loader(args.config, usd_path=args.usd)
+        )
         grid = deps.grid_loader(args.initial_grid)
 
         evaluation_urdf = args.ur20_urdf

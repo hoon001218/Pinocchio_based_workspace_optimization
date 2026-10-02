@@ -27,7 +27,7 @@ from .robots import resolve_official_ur20, validate_vendored_ur20_asset
 class SetupDependencies:
     """Injectable boundaries for deterministic setup tests."""
 
-    spec_loader: Callable[[str | Path | None], SceneSpec]
+    spec_loader: Callable[..., SceneSpec]
     ur20_validator: Callable[[], Path]
     ur20_resolver: Callable[..., tuple[Path, tuple[Path, ...]]]
     sr12ia_path: Callable[[], Path]
@@ -45,6 +45,14 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument("--config", type=Path, default=default_config_path())
+    parser.add_argument(
+        "--usd",
+        type=Path,
+        help=(
+            "Read environment geometry directly from a local USD/USDA/USDC "
+            "scene; task and robot settings still come from --config."
+        ),
+    )
     source = parser.add_mutually_exclusive_group()
     source.add_argument(
         "--sr12ia-usd",
@@ -88,7 +96,11 @@ def main(
                 "--accept-fanuc-license"
             )
 
-        spec = deps.spec_loader(args.config)
+        spec = (
+            deps.spec_loader(args.config)
+            if args.usd is None
+            else deps.spec_loader(args.config, usd_path=args.usd)
+        )
         print(f"OK scene configuration: {_portable_path(spec.source_path)}")
 
         vendored_urdf = deps.ur20_validator()

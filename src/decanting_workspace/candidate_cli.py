@@ -29,6 +29,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--config", type=Path, default=default_config_path())
     parser.add_argument(
+        "--usd",
+        type=Path,
+        help=(
+            "Read environment geometry directly from a local USD/USDA/USDC "
+            "scene; task and robot settings still come from --config."
+        ),
+    )
+    parser.add_argument(
         "--ur-base",
         nargs=4,
         type=float,
@@ -102,7 +110,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        spec = load_scene_spec(args.config)
+        spec = (
+            load_scene_spec(args.config)
+            if args.usd is None
+            else load_scene_spec(args.config, usd_path=args.usd)
+        )
         corners = tuple(CORNER_SIGNS) if args.corner == "all" else (args.corner,)
         state = SceneState(
             lift_height_m=args.lift_height_mm / 1000.0,

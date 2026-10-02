@@ -31,7 +31,7 @@ from .robots import RobotBundle, load_robot_bundle, resolve_official_ur20
 class PrecomputeDependencies:
     """Injectable I/O and heavy-computation boundary used by :func:`main`."""
 
-    spec_loader: Callable[[str | Path | None], SceneSpec]
+    spec_loader: Callable[..., SceneSpec]
     official_ur20_resolver: Callable[..., tuple[Path, tuple[Path, ...]]]
     robot_loader: Callable[..., RobotBundle]
     precomputer: Callable[..., PrecomputedCache]
@@ -46,6 +46,14 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument("--config", type=Path, default=default_config_path())
+    parser.add_argument(
+        "--usd",
+        type=Path,
+        help=(
+            "Read environment geometry directly from a local USD/USDA/USDC "
+            "scene; task and robot settings still come from --config."
+        ),
+    )
     parser.add_argument(
         "--grid",
         type=Path,
@@ -186,7 +194,11 @@ def main(
     args = build_parser().parse_args(argv)
     deps = dependencies or _default_dependencies()
     try:
-        spec = deps.spec_loader(args.config)
+        spec = (
+            deps.spec_loader(args.config)
+            if args.usd is None
+            else deps.spec_loader(args.config, usd_path=args.usd)
+        )
         grid = load_case_grid_yaml(args.grid)
         grid = _filter_grid(grid, args.only_sku, args.only_lift_height_mm)
         case_count = grid.case_count

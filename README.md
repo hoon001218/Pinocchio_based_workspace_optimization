@@ -10,6 +10,7 @@ fresh-machine checklist.
 
 Implemented in this stage:
 
+- direct USD/USDA/USDC environment loading with triangle-mesh visualization and collision, including parent transforms, units and instances (see [USD scenes](docs/USD_SCENES.md));
 - fixed conveyor, worktable, and camera-support proxies extracted from `cu_usd_simplified.usd`;
 - a synthesized `World Z = 0` floor;
 - the `1.350 x 1.000 x 0.150 m` pallet and `0...0.760 m` lift range;
@@ -88,6 +89,22 @@ All repository-owned paths are resolved through the installed module rather
 than a username, drive, or checkout folder name. If Python is installed
 non-editably, set `DECANTING_WORKSPACE_ROOT` to the complete cloned repository
 before running the commands.
+
+## Use a USD environment
+
+Read an unsimplified polygon-mesh environment directly while retaining the
+configured task frames and robot URDFs:
+
+```powershell
+decanting-live --usd path/to/environment.usd --open
+```
+
+See [USD scenes](docs/USD_SCENES.md) for environment selection, conveyor/table
+bindings, supported geometry, and cache regeneration. The scene-only viewer,
+evaluator, precompute, playback, and setup commands also accept `--usd`.
+For this repository's full cell at `USD/cu_usd_simplified.usd`, use
+`decanting-live --config config/cell_usd.yaml --open` to retain its fixed supports
+and omit missing camera/floor payloads and generated moving objects.
 
 ## Robot assets
 
@@ -495,6 +512,7 @@ for ur_base, sr_base in base_candidates:
 `evaluate_base_candidate` applies the selected SR J3 limit on each call and
 rejects a 450 mm study if the supplied SR model supports only 300 mm. The
 bundled fallback conservatively supports both choices. `config/cell_nominal.yaml`
-is the authoritative dimension source; USD is retained only as geometry/frame
-provenance. The remaining optimization work is to choose sampling bounds and
+defines task dimensions and the default environment proxies. In USD mode,
+selected triangles provide environment geometry and bound support dimensions;
+task frames and SKU dimensions remain configured. The remaining optimization work is to choose sampling bounds and
 an objective/constraint aggregation over these raw results.

@@ -2,7 +2,7 @@ schema_version: 1
 units: m
 
 provenance:
-  geometry_source: ../cu_usd_simplified.usd
+  geometry_source: ../USD/cu_usd_simplified.usd
   frame_source: ../BGF/load_group_transforms_true.json
   notes:
     - Fixed collision geometry is limited to geometry present in the simplified USD.

@@ -1,0 +1,47 @@
+# Keep configured task frames, SKU dimensions and robot URDFs.
+base_config: cell_nominal.yaml
+
+usd_scene:
+  file: ../USD/Collected_scene_layout/scene_layout.usd
+  include_prim_paths: [/World]
+  exclude_prim_paths:
+    # Generated floor, robot assemblies and module cameras.
+    - /World/GroundPlane
+    - /World/LoadGroup/RB
+    - /World/UncaseGroup/RB
+    - /World/UncaseGroup/UncasingLoadFrame/Camera
+    - /World/PalletGroup/Camera/rsd455
+    - /World/ToteGroup/Camera/rsd455_03
+    # Pallet, transported tote and SKU samples come from the process config.
+    - /World/PalletGroup/pallet
+    - /World/PalletGroup/FlatBox_A02_15x21x8cm_PR_NVD_05
+    - /World/PalletGroup/FlatBox_A02_15x21x8cm_PR_NVD_06
+    - /World/PalletGroup/FlatBox_A02_15x21x8cm_PR_NVD_07
+    - /World/PalletGroup/FlatBox_A02_15x21x8cm_PR_NVD_08
+    - /World/PalletGroup/Cube
+    - /World/PalletGroup/Cube_01
+    - /World/PalletGroup/Cube_02
+    - /World/PalletGroup/Cube_03
+    - /World/PalletGroup/Cube_04
+    - /World/ToteGroup/small_KLT
+    - /World/ConveyorGroup/conv_middle/tote_supply
+    - /World/SwedishStyleJelly
+    - /World/SquidAndPeanut
+    - /World/HalfCoatedGlove
+    - /World/BlackMaskLarge
+    - /World/PlateLarge
+  box_prims:
+    conveyor_level_1: /World/ConveyorGroup/conv_bottom
+    conveyor_level_2: /World/ConveyorGroup/conv_middle
+    conveyor_level_3: /World/ConveyorGroup/conv_top
+    worktable_far_a: /World/ToteGroup/ConveyorBelt_A06_PR_NVD_02/Geometry/SM_ConveyorBelt_A06_Belt_01
+    worktable_far_b: /World/ToteGroup/ConveyorBelt_A06_PR_NVD_01/Geometry/SM_ConveyorBelt_A06_Belt_01
+    worktable_current_a: /World/ToteGroup/ConveyorBelt_A06_PR_NVD_03/Geometry/SM_ConveyorBelt_A06_Belt_01
+    worktable_current_b: /World/ToteGroup/ConveyorBelt_A06_PR_NVD_04/Geometry/SM_ConveyorBelt_A06_Belt_01
+    pallet_camera_pole: /World/PalletGroup/Camera/Cube
+    pallet_camera_arm: /World/PalletGroup/Camera/Cube_01
+  box_bounds_prims:
+    # Only rollers define task support height; the tall frame remains a mesh obstacle.
+    conveyor_level_1: /World/ConveyorGroup/conv_bottom/*/Geometry/SM_ConveyorBelt_A05_Roller*
+    conveyor_level_2: /World/ConveyorGroup/conv_middle/*/Geometry/SM_ConveyorBelt_A05_Roller*
+    conveyor_level_3: /World/ConveyorGroup/conv_top/*/Geometry/SM_ConveyorBelt_A05_Roller*

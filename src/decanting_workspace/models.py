@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import math
+import operator
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -60,6 +61,34 @@ class BoxPrimitive:
     size_m: Vec3
     yaw_deg: float = 0.0
     collision_enabled: bool = True
+
+
+@dataclass(frozen=True)
+class MeshObstacle:
+    """Static triangle surface with transforms baked into World metres."""
+
+    name: str
+    role: str
+    vertices_m: tuple[Vec3, ...]
+    triangles: tuple[tuple[int, int, int], ...]
+    collision_enabled: bool = True
+    source_prim_path: str = ""
+
+    def __post_init__(self) -> None:
+        try:
+            vertices = tuple(tuple(float(x) for x in vertex) for vertex in self.vertices_m)
+            triangles = tuple(tuple(operator.index(i) for i in face) for face in self.triangles)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"mesh {self.name} needs numeric vertices and integer indices") from exc
+        if not self.name or not vertices or not triangles:
+            raise ValueError("mesh obstacle needs a name, vertices and triangles")
+        if any(len(v) != 3 or not all(math.isfinite(x) for x in v) for v in vertices):
+            raise ValueError(f"mesh {self.name} vertices must be finite XYZ values")
+        if any(len(t) != 3 or any(i < 0 or i >= len(vertices) for i in t) for t in triangles):
+            raise ValueError(f"mesh {self.name} triangle indices are invalid")
+        # Identity-based BVH reuse relies on nested data being immutable too.
+        object.__setattr__(self, "vertices_m", vertices)
+        object.__setattr__(self, "triangles", triangles)
 
 
 @dataclass(frozen=True)
@@ -158,6 +187,7 @@ class SceneSpec:
     box_skus: Mapping[str, BoxSku]
     tote: ToteSpec
     robots: Mapping[str, RobotSpec]
+    static_meshes: tuple[MeshObstacle, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -179,15 +209,15 @@ def default_config_path() -> Path:
     return repository_path("config", "cell_nominal.yaml")
 
 
-def load_scene_spec(path: str | Path | None = None) -> SceneSpec:
+def load_scene_spec(
+    path: str | Path | None = None, *, usd_path: str | Path | None = None
+) -> SceneSpec:
     """Load and validate a scene without creating viewer or Pinocchio objects."""
 
     config_path = Path(path or default_config_path()).resolve()
     if not config_path.is_file():
         raise FileNotFoundError(f"scene configuration not found: {config_path}")
-    raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    if not isinstance(raw, Mapping):
-        raise ValueError("scene configuration root must be a mapping")
+    raw = _read_scene_configuration(config_path)
     if raw.get("schema_version") != 1:
         raise ValueError("only scene schema_version 1 is supported")
     if raw.get("units") != "m":
@@ -281,7 +311,7 @@ def load_scene_spec(path: str | Path | None = None) -> SceneSpec:
     if len(names) != len(set(names)):
         raise ValueError("static box names must be unique")
 
-    return SceneSpec(
+    spec = SceneSpec(
         source_path=config_path,
         floor_z_m=floor_z,
         installation_region=region,
@@ -292,6 +322,66 @@ def load_scene_spec(path: str | Path | None = None) -> SceneSpec:
         tote=tote,
         robots=robots,
     )
+    if usd_path is not None or raw.get("usd_scene") is not None:
+        from .usd_scene import load_usd_environment
+
+        options = raw.get("usd_scene", {})
+        if not isinstance(options, Mapping):
+            raise ValueError("usd_scene must be a mapping")
+        return load_usd_environment(spec, options, usd_path=usd_path)
+    return spec
+
+
+def _read_scene_configuration(
+    path: Path, ancestry: tuple[Path, ...] = ()
+) -> dict[str, Any]:
+    """Read a small override profile, preserving each file's relative paths."""
+
+    path = path.resolve()
+    if path in ancestry:
+        raise ValueError("scene base_config inheritance contains a cycle")
+    if not path.is_file():
+        raise FileNotFoundError(f"scene configuration not found: {path}")
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, Mapping):
+        raise ValueError("scene configuration root must be a mapping")
+    raw = dict(raw)
+    base = raw.pop("base_config", None)
+    if base is not None:
+        if not isinstance(base, str) or not base.strip():
+            raise ValueError("base_config must be a non-empty configuration path")
+        inherited = _read_scene_configuration(path.parent / base, (*ancestry, path))
+    else:
+        inherited = {}
+
+    # Resolve only paths explicitly authored in this file. An inherited URDF,
+    # frame file or USD stays anchored to the file that originally declared it.
+    if "reference_frames_file" in raw:
+        raw["reference_frames_file"] = str((path.parent / str(raw["reference_frames_file"])).resolve())
+    if isinstance(raw.get("robots"), Mapping):
+        robots = dict(raw["robots"])
+        for name, robot in robots.items():
+            if isinstance(robot, Mapping) and "urdf" in robot:
+                robots[name] = {**robot, "urdf": str((path.parent / str(robot["urdf"])).resolve())}
+        raw["robots"] = robots
+    if isinstance(raw.get("usd_scene"), Mapping) and "file" in raw["usd_scene"]:
+        raw["usd_scene"] = {
+            **raw["usd_scene"],
+            "file": str((path.parent / str(raw["usd_scene"]["file"])).resolve()),
+        }
+    return _merge_scene_configuration(inherited, raw)
+
+
+def _merge_scene_configuration(
+    base: Mapping[str, Any], overrides: Mapping[str, Any]
+) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in overrides.items():
+        if isinstance(value, Mapping) and isinstance(merged.get(key), Mapping):
+            merged[key] = _merge_scene_configuration(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
 
 
 def _load_frames(path: Path) -> Mapping[str, FrameSpec]:

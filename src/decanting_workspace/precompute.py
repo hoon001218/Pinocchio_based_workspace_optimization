@@ -633,6 +633,10 @@ def scene_spec_fingerprint(spec: SceneSpec) -> str:
     # model/config changes invalidate it.
     payload = asdict(spec)
     payload.pop("source_path", None)
+    # Preserve the identity of existing box-only scenes and tracked caches.
+    # Imported USD vertices/topology remain part of the hash when present.
+    if not spec.static_meshes:
+        payload.pop("static_meshes", None)
     for robot in payload["robots"].values():
         robot.pop("urdf_path", None)
     payload = _json_compatible(payload)

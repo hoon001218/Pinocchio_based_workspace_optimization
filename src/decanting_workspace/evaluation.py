@@ -284,11 +284,19 @@ def collision_phase_for_check(
         )
         for first, second in check.allowed_contacts
     )
+    collision_boxes = _deduplicate_boxes(obstacles)
+    collision_meshes = tuple(
+        mesh for mesh in snapshot.collision_meshes if mesh.name not in suppressed
+    )
+    names = [box.name for box in collision_boxes] + [mesh.name for mesh in collision_meshes]
+    if len(names) != len(set(names)):
+        raise ValueError("duplicate collision obstacle name between boxes and meshes")
     return CollisionPhase(
-        obstacles=_deduplicate_boxes(obstacles),
+        obstacles=collision_boxes,
         attached_boxes=tuple(attached),
         allowed_contacts=allowed,
         floor_z_m=spec.floor_z_m,
+        meshes=collision_meshes,
     )
 
 

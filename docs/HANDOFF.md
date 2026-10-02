@@ -26,7 +26,7 @@
 - installation 평면은 conveyor와 pallet/worktable 사이의 한 cell strip으로 제한한다.
 - 두 robot 모두 base `x`, `y`, 장착 높이 `z`, yaw가 설계변수다.
 - pedestal은 바닥부터 base 높이까지 채워진 보수적 box로 취급한다.
-- BGF/USD 형상은 상대 배치의 근거이고, 계산 치수는 `config/cell_nominal.yaml`이 우선한다.
+- 기본 모드는 `config/cell_nominal.yaml`의 환경 치수를 사용한다. USD 모드는 선택한 Mesh와 연결된 지지면 치수를 직접 읽으며 공정 프레임·SKU 치수는 config를 유지한다.
 
 ### 물체 치수
 
@@ -424,7 +424,7 @@ full path-sampled nominal cache는 훨씬 오래 걸리고 파일이 커질 수 
 
 ### 환경 치수 또는 frame 변경
 
-1. `config/cell_nominal.yaml` 또는 `config/reference_frames.json` 수정
+1. `config/cell_nominal.yaml` 또는 `config/reference_frames.json` 수정. `--usd`/`usd_scene` 환경 모드에서는 선택한 USD Mesh 변경을 시작 시 직접 읽으며, 지지면 연결과 제외 규칙은 [USD_SCENES.md](USD_SCENES.md)에 따른다.
 2. config/scene/workflow 관련 test 실행
 3. candidate report와 두 tracked cache 재생성
 4. 다른 checkout path에서 `decanting-setup`과 playback 검증

@@ -8,6 +8,10 @@
 프로그램 구조와 계산 의미는 [ARCHITECTURE.md](ARCHITECTURE.md), 현재 결과와
 후속 작업은 [HANDOFF.md](HANDOFF.md)를 참고한다.
 
+큐브로 simplified하지 않은 USD 환경을 직접 읽는 실행·경로 설정은
+[USD_SCENES.md](USD_SCENES.md)를 참고한다. 저장소의 전체 셀 USD는
+`decanting-live --config config\cell_usd.yaml --open`으로 실행한다.
+
 ## 1. 처음 한 번만 수행하는 설치
 
 ### 1.1 저장소 받기

@@ -10,6 +10,7 @@ from .models import (
     BasePose,
     BoxPrimitive,
     FrameSpec,
+    MeshObstacle,
     SceneSpec,
     SceneState,
 )
@@ -33,10 +34,15 @@ class SceneSnapshot:
     ur_base: BasePose
     sr_base: BasePose
     state: SceneState
+    meshes: tuple[MeshObstacle, ...] = ()
 
     @property
     def collision_boxes(self) -> tuple[BoxPrimitive, ...]:
         return tuple(box for box in self.boxes if box.collision_enabled)
+
+    @property
+    def collision_meshes(self) -> tuple[MeshObstacle, ...]:
+        return tuple(mesh for mesh in self.meshes if mesh.collision_enabled)
 
 
 def sr_cutting_workspace_footprint_box(
@@ -95,13 +101,22 @@ def sr_cutting_workspace_footprint_box(
 
 
 def tote_motion_axis_world_xy(spec: SceneSpec) -> tuple[float, float]:
-    """Return the supporting worktable's unit long-axis direction in World XY."""
+    """Return the table's long axis toward positive World X (then positive Y).
+
+    Equivalent support boxes may swap their local X/Y dimensions or rotate
+    by 180 degrees.  Those representations must keep the same signed tote
+    offset convention.
+    """
 
     support = _tote_motion_support_box(spec)
     yaw = math.radians(support.yaw_deg)
     if support.size_m[0] >= support.size_m[1]:
-        return math.cos(yaw), math.sin(yaw)
-    return -math.sin(yaw), math.cos(yaw)
+        axis = math.cos(yaw), math.sin(yaw)
+    else:
+        axis = -math.sin(yaw), math.cos(yaw)
+    if axis[0] < -1e-12 or (abs(axis[0]) <= 1e-12 and axis[1] < 0.0):
+        return -axis[0], -axis[1]
+    return axis
 
 
 def tote_long_axis_offset_range_m(spec: SceneSpec) -> tuple[float, float]:
@@ -131,10 +146,15 @@ def tote_long_axis_offset_range_m(spec: SceneSpec) -> tuple[float, float]:
         )
     support_half_extent = support.size_m[long_axis_index] / 2.0
     initial_coordinate = frame_local[long_axis_index]
-    return (
+    limits = (
         -support_half_extent + tote_half_extent - initial_coordinate,
         support_half_extent - tote_half_extent - initial_coordinate,
     )
+    authored_axis = (c, s) if long_axis_index == 0 else (-s, c)
+    motion_axis = tote_motion_axis_world_xy(spec)
+    if sum(a * b for a, b in zip(authored_axis, motion_axis)) < 0.0:
+        return -limits[1], -limits[0]
+    return limits
 
 
 def materialize_scene(
@@ -186,6 +206,7 @@ def materialize_scene(
         ur_base=ur,
         sr_base=sr,
         state=scenario,
+        meshes=spec.static_meshes,
     )
 
 

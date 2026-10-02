@@ -25,6 +25,7 @@ from .kinematics import (
 from .models import (
     BasePose,
     BoxPrimitive,
+    MeshObstacle,
     SceneSpec,
     SceneState,
     load_scene_spec,
@@ -68,6 +69,7 @@ __all__ = [
     "BasePoseGrid",
     "BaseCandidateEvaluation",
     "BoxPrimitive",
+    "MeshObstacle",
     "CaseGrid",
     "CaseKey",
     "CoordinationMode",

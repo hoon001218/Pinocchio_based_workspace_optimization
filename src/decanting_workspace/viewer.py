@@ -13,6 +13,7 @@ from .models import (
     BasePose,
     BoxPrimitive,
     CutterProxySpec,
+    MeshObstacle,
     SceneSpec,
     SuctionProxySpec,
 )
@@ -82,9 +83,12 @@ class CellViewer:
         self._robots.clear()
         self._ur20_suction_attachment = None
         self._set_background()
-        self._render_floor(spec, snapshot.boxes)
-        for box in snapshot.boxes:
+        boxes = _visible_environment_boxes(spec, snapshot)
+        self._render_floor(spec, boxes, snapshot.meshes)
+        for box in boxes:
             self._render_box(box)
+        for mesh in snapshot.meshes:
+            self._render_mesh(mesh)
         if show_installation_region:
             self._render_installation_region(spec)
         if show_frames:
@@ -237,17 +241,14 @@ class CellViewer:
         """Update case-dependent primitives without reloading either robot mesh."""
 
         self.viewer["decanting/environment"].delete()
-        boxes = tuple(
-            box
-            for box in snapshot.boxes
-            if not (
-                suppress_process_objects
-                and box.role in {"box", "box_sample_alternative", "tote"}
-            )
+        boxes = _visible_environment_boxes(
+            spec, snapshot, suppress_process_objects=suppress_process_objects
         )
-        self._render_floor(spec, boxes)
+        self._render_floor(spec, boxes, snapshot.meshes)
         for box in boxes:
             self._render_box(box)
+        for mesh in snapshot.meshes:
+            self._render_mesh(mesh)
 
         self.viewer["decanting/frames"].delete()
         if show_frames:
@@ -471,15 +472,36 @@ class CellViewer:
         )
 
     def _render_floor(
-        self, spec: SceneSpec, boxes: Iterable[BoxPrimitive]
+        self,
+        spec: SceneSpec,
+        boxes: Iterable[BoxPrimitive],
+        meshes: Iterable[MeshObstacle] = (),
     ) -> None:
         import meshcat.geometry as geometry
 
-        box_list = tuple(boxes)
-        x_min = min(box.center_m[0] - box.size_m[0] / 2.0 for box in box_list) - 0.7
-        x_max = max(box.center_m[0] + box.size_m[0] / 2.0 for box in box_list) + 0.7
-        y_min = min(box.center_m[1] - box.size_m[1] / 2.0 for box in box_list) - 0.7
-        y_max = max(box.center_m[1] + box.size_m[1] / 2.0 for box in box_list) + 0.7
+        bounds = [
+            (
+                box.center_m[0] - box.size_m[0] / 2.0,
+                box.center_m[0] + box.size_m[0] / 2.0,
+                box.center_m[1] - box.size_m[1] / 2.0,
+                box.center_m[1] + box.size_m[1] / 2.0,
+            )
+            for box in boxes
+        ]
+        for mesh in meshes:
+            vertices = np.asarray(mesh.vertices_m, dtype=float)
+            bounds.append(
+                (vertices[:, 0].min(), vertices[:, 0].max(),
+                 vertices[:, 1].min(), vertices[:, 1].max())
+            )
+        if not bounds:
+            region = spec.installation_region
+            bounds.append((region.raw_xy_min_m[0], region.raw_xy_max_m[0],
+                           region.raw_xy_min_m[1], region.raw_xy_max_m[1]))
+        x_min = min(bound[0] for bound in bounds) - 0.7
+        x_max = max(bound[1] for bound in bounds) + 0.7
+        y_min = min(bound[2] for bound in bounds) - 0.7
+        y_max = max(bound[3] for bound in bounds) + 0.7
         thickness = 0.02
         node = self.viewer["decanting/environment/floor"]
         node.set_object(
@@ -491,6 +513,22 @@ class CellViewer:
                 ((x_min + x_max) / 2.0, (y_min + y_max) / 2.0, spec.floor_z_m - thickness / 2.0)
             )
         )
+
+    def _render_mesh(self, mesh: MeshObstacle) -> None:
+        import meshcat.geometry as geometry
+
+        color, opacity = ROLE_STYLE.get(mesh.role, (0x777777, 0.80))
+        node = self.viewer[f"decanting/environment/{mesh.role}/{mesh.name}"]
+        node.set_object(
+            geometry.TriangularMeshGeometry(
+                np.asarray(mesh.vertices_m, dtype=float),
+                np.asarray(mesh.triangles, dtype=np.int32),
+            ),
+            geometry.MeshLambertMaterial(
+                color=color, transparent=opacity < 1.0, opacity=opacity,
+            ),
+        )
+        node.set_transform(np.eye(4))
 
     def _render_installation_region(self, spec: SceneSpec) -> None:
         import meshcat.geometry as geometry
@@ -635,6 +673,30 @@ class CellViewer:
     def _set_background(self) -> None:
         self.viewer["/Background"].set_property("top_color", [0.88, 0.90, 0.92])
         self.viewer["/Background"].set_property("bottom_color", [0.72, 0.75, 0.78])
+
+
+def _visible_environment_boxes(
+    spec: SceneSpec,
+    snapshot: SceneSnapshot,
+    *,
+    suppress_process_objects: bool = False,
+) -> tuple[BoxPrimitive, ...]:
+    """Keep workflow proxies available without displaying them over USD meshes."""
+
+    mesh_names = {mesh.name for mesh in snapshot.meshes}
+    static_names = {box.name for box in spec.static_boxes}
+    return tuple(
+        box
+        for box in snapshot.boxes
+        if box.name not in mesh_names
+        and not (
+            snapshot.meshes and box.name in static_names and not box.collision_enabled
+        )
+        and not (
+            suppress_process_objects
+            and box.role in {"box", "box_sample_alternative", "tote"}
+        )
+    )
 
 
 def _rotation_x(angle_rad: float) -> np.ndarray:

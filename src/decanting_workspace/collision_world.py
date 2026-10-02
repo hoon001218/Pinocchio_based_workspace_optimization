@@ -13,15 +13,49 @@ moving box/tote state out of the immutable nominal scene snapshot.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 import math
+from threading import Lock
 from typing import Iterable, Sequence
+import weakref
 
 import numpy as np
 
-from .models import BoxPrimitive
+from .models import BoxPrimitive, MeshObstacle
+from .mesh_geometry import mesh_component_topology, origin_inside_closed_mesh
 from .robots import RobotBundle
 from .transforms import yaw_matrix
+
+
+@dataclass(frozen=True)
+class _MeshCollisionEntry:
+    mesh_ref: weakref.ReferenceType[MeshObstacle]
+    geometry: object
+    vertices: np.ndarray
+    triangles: np.ndarray
+    is_closed: bool
+    representatives: np.ndarray
+
+
+@dataclass(frozen=True)
+class _ShapeContainmentEntry:
+    shape: object
+    points: np.ndarray
+    vertices: np.ndarray
+    closed_triangles: np.ndarray
+    lower: np.ndarray
+    upper: np.ndarray
+
+
+_SHAPE_CONTAINMENT_CACHE_MAXSIZE = 128
+# Every mesh in a living scene can reuse its BVH, even when the scene has many
+# more than 128 prims. Weak owner references release old scenes automatically
+# without hashing vertex tuples or letting recycled identities match. Geometry
+# is immutable; placements and query results belong to individual checkers.
+_MESH_COLLISION_CACHE: dict[int, _MeshCollisionEntry] = {}
+_SHAPE_CONTAINMENT_CACHE: OrderedDict[int, _ShapeContainmentEntry] = OrderedDict()
+_MESH_COLLISION_CACHE_LOCK = Lock()
 
 
 @dataclass(frozen=True)
@@ -59,6 +93,7 @@ class CollisionPhase:
     attached_boxes: tuple[AttachedBox, ...] = ()
     allowed_contacts: frozenset[tuple[str, str]] = frozenset()
     floor_z_m: float | None = 0.0
+    meshes: tuple[MeshObstacle, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -105,6 +140,8 @@ class PinocchioCollisionChecker:
             index: geometry.name
             for index, geometry in enumerate(self.geometry_model.geometryObjects)
         }
+        self._environment_meshes: dict[int, _MeshCollisionEntry] = {}
+        self._containment_shapes: dict[int, _ShapeContainmentEntry] = {}
 
         if include_self_collision:
             self._add_provisional_self_pairs(pin)
@@ -115,6 +152,10 @@ class PinocchioCollisionChecker:
                 continue
             obstacle_ids.append(self._add_world_box(pin, coal, obstacle))
 
+        for mesh in phase.meshes:
+            if mesh.collision_enabled:
+                obstacle_ids.append(self._add_world_mesh(pin, mesh))
+
         if phase.floor_z_m is not None:
             floor_z = float(phase.floor_z_m)
             if not math.isfinite(floor_z):
@@ -123,7 +164,7 @@ class PinocchioCollisionChecker:
                 name="floor",
                 role="floor",
                 center_m=(0.0, 0.0, floor_z - 0.01),
-                size_m=(floor_extent_m, floor_extent_m, 0.02),
+                size_m=(*_floor_size_for_phase(phase, floor_extent_m), 0.02),
             )
             obstacle_ids.append(self._add_world_box(pin, coal, floor))
 
@@ -169,11 +210,16 @@ class PinocchioCollisionChecker:
             False,
         )
         contacts: list[CollisionContact] = []
+        contained_pairs: set[tuple[int, int]] = set()
         for pair, result in zip(
             self.geometry_model.collisionPairs,
             self.geometry_data.collisionResults,
         ):
-            if result.isCollision():
+            in_collision = result.isCollision()
+            if not in_collision and self._pair_is_contained(int(pair.first), int(pair.second)):
+                in_collision = True
+                contained_pairs.add((int(pair.first), int(pair.second)))
+            if in_collision:
                 contacts.append(
                     CollisionContact(
                         self._logical_names[int(pair.first)],
@@ -196,6 +242,8 @@ class PinocchioCollisionChecker:
                 self.geometry_data.distanceResults,
             ):
                 distance = float(result.min_distance)
+                if (int(pair.first), int(pair.second)) in contained_pairs:
+                    distance = min(distance, 0.0)
                 if distance < minimum_distance:
                     minimum_distance = distance
                     nearest_pair = (
@@ -214,6 +262,37 @@ class PinocchioCollisionChecker:
         """Small callback adapter accepted by the Pinocchio IK solver."""
 
         return not self.check(q).in_collision
+
+    def _pair_is_contained(self, first: int, second: int) -> bool:
+        """Restore solid interiors that a triangle-surface BVH cannot test."""
+
+        for environment_id, candidate_id in ((first, second), (second, first)):
+            entry = self._environment_meshes.get(environment_id)
+            if entry is None:
+                continue
+            candidate = self._containment_shapes.get(candidate_id)
+            if candidate is None:
+                shape = self.geometry_model.geometryObjects[candidate_id].geometry
+                candidate = _shape_containment_entry(shape)
+                self._containment_shapes[candidate_id] = candidate
+            placement = self.geometry_data.oMg[candidate_id]
+            if entry.is_closed:
+                points = candidate.points @ placement.rotation.T + placement.translation
+                bounds = entry.geometry.aabb_local
+                if _points_inside_surface(
+                    points, entry.vertices, entry.triangles, bounds.min_, bounds.max_,
+                ):
+                    return True
+            # BVH-vs-BVH also misses the reverse case: a small environment
+            # component entirely inside a closed robot collision mesh.
+            if len(candidate.closed_triangles):
+                points = (entry.representatives - placement.translation) @ placement.rotation
+                if _points_inside_surface(
+                    points, candidate.vertices, candidate.closed_triangles,
+                    candidate.lower, candidate.upper,
+                ):
+                    return True
+        return False
 
     def _add_provisional_self_pairs(self, pin: object) -> None:
         geometries = self.geometry_model.geometryObjects
@@ -245,6 +324,21 @@ class PinocchioCollisionChecker:
         )
         geometry_id = int(self.geometry_model.addGeometryObject(geometry))
         self._logical_names[geometry_id] = box.name
+        return geometry_id
+
+    def _add_world_mesh(self, pin: object, mesh: MeshObstacle) -> int:
+        entry = _mesh_collision_entry(mesh)
+        name = _unique_geometry_name(self.geometry_model, f"world::{mesh.name}")
+        geometry = pin.GeometryObject(
+            name,
+            0,
+            0,
+            pin.SE3.Identity(),
+            entry.geometry,
+        )
+        geometry_id = int(self.geometry_model.addGeometryObject(geometry))
+        self._logical_names[geometry_id] = mesh.name
+        self._environment_meshes[geometry_id] = entry
         return geometry_id
 
     def _add_attached_box(
@@ -356,6 +450,150 @@ def _strip_geometry_suffix(name: str) -> str:
 
 def _canonical_pair(first: str, second: str) -> tuple[str, str]:
     return tuple(sorted((str(first), str(second))))
+
+
+def mesh_collision_geometry(mesh: MeshObstacle) -> object:
+    """Reuse immutable World BVHs for living meshes without hashing their data."""
+
+    return _mesh_collision_entry(mesh).geometry
+
+
+def _mesh_collision_entry(mesh: MeshObstacle) -> _MeshCollisionEntry:
+
+    import coal
+
+    identity = id(mesh)
+    with _MESH_COLLISION_CACHE_LOCK:
+        cached = _MESH_COLLISION_CACHE.get(identity)
+        if cached is not None and cached.mesh_ref() is mesh:
+            return cached
+
+    vertex_array = np.asarray(mesh.vertices_m, dtype=float)
+    triangle_array = np.asarray(mesh.triangles, dtype=np.intp)
+    vertices = coal.StdVec_Vec3s()
+    for vertex in vertex_array:
+        vertices.append(vertex)
+    triangles = coal.StdVec_Triangle()
+    for triangle in mesh.triangles:
+        triangles.append(coal.Triangle(*triangle))
+    geometry = coal.BVHModelOBBRSS()
+    statuses = (
+        geometry.beginModel(len(mesh.triangles), len(mesh.vertices_m)),
+        geometry.addSubModel(vertices, triangles),
+        geometry.endModel(),
+    )
+    if any(status != 0 for status in statuses):
+        raise ValueError(f"could not build collision mesh: {mesh.name}")
+    geometry.computeLocalAABB()
+    representatives, closed_triangles = mesh_component_topology(vertex_array, triangle_array)
+    vertex_array.setflags(write=False)
+    closed_triangles.setflags(write=False)
+    def release_owner(owner_ref: weakref.ReferenceType[MeshObstacle]) -> None:
+        with _MESH_COLLISION_CACHE_LOCK:
+            current = _MESH_COLLISION_CACHE.get(identity)
+            if current is not None and current.mesh_ref is owner_ref:
+                del _MESH_COLLISION_CACHE[identity]
+
+    entry = _MeshCollisionEntry(
+        weakref.ref(mesh, release_owner), geometry, vertex_array, closed_triangles,
+        bool(len(closed_triangles)), vertex_array[representatives],
+    )
+    with _MESH_COLLISION_CACHE_LOCK:
+        cached = _MESH_COLLISION_CACHE.get(identity)
+        if cached is not None and cached.mesh_ref() is mesh:
+            return cached
+        _MESH_COLLISION_CACHE[identity] = entry
+    return entry
+
+
+def _shape_containment_entry(shape: object) -> _ShapeContainmentEntry:
+    """Cache actual component points and solid topology for finite shapes."""
+
+    import coal
+
+    identity = id(shape)
+    with _MESH_COLLISION_CACHE_LOCK:
+        cached = _SHAPE_CONTAINMENT_CACHE.get(identity)
+        if cached is not None and cached.shape is shape:
+            _SHAPE_CONTAINMENT_CACHE.move_to_end(identity)
+            return cached
+    vertices = np.empty((0, 3))
+    closed_triangles = np.empty((0, 3), dtype=np.intp)
+    if isinstance(shape, coal.BVHModelBase):
+        vertices = np.asarray(shape.vertices(), dtype=float).reshape(-1, 3)
+        triangles = np.asarray(
+            [[shape.tri_indices(index)[axis] for axis in range(3)]
+             for index in range(shape.num_tris)], dtype=np.intp,
+        ).reshape(-1, 3)
+        representatives, closed_triangles = mesh_component_topology(vertices, triangles)
+        points = vertices[representatives]
+    elif isinstance(shape, coal.ConvexBase):
+        # The mean of convex vertices lies inside the actual convex body even
+        # when its local origin is unrelated to its geometric location.
+        points = np.asarray(shape.points(), dtype=float).reshape(-1, 3).mean(axis=0)[None, :]
+    elif shape.getNodeType() == coal.GEOM_TRIANGLE:
+        points = np.asarray((shape.a,), dtype=float)
+    elif shape.getNodeType() in (
+        coal.GEOM_BOX, coal.GEOM_SPHERE, coal.GEOM_CAPSULE, coal.GEOM_CYLINDER,
+        coal.GEOM_CONE, coal.GEOM_ELLIPSOID,
+    ):
+        points = np.zeros((1, 3))
+    else:
+        points = np.empty((0, 3))
+    lower = vertices.min(axis=0) if len(vertices) else np.zeros(3)
+    upper = vertices.max(axis=0) if len(vertices) else np.zeros(3)
+    entry = _ShapeContainmentEntry(shape, points, vertices, closed_triangles, lower, upper)
+    with _MESH_COLLISION_CACHE_LOCK:
+        cached = _SHAPE_CONTAINMENT_CACHE.get(identity)
+        if cached is not None and cached.shape is shape:
+            _SHAPE_CONTAINMENT_CACHE.move_to_end(identity)
+            return cached
+        _SHAPE_CONTAINMENT_CACHE[identity] = entry
+        while len(_SHAPE_CONTAINMENT_CACHE) > _SHAPE_CONTAINMENT_CACHE_MAXSIZE:
+            _SHAPE_CONTAINMENT_CACHE.popitem(last=False)
+    return entry
+
+
+def _points_inside_surface(
+    points: np.ndarray,
+    vertices: np.ndarray,
+    triangles: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+) -> bool:
+    # After Coal reports no surface intersection, each connected candidate
+    # component is wholly inside or outside. One real component point suffices.
+    candidates = points[
+        np.all(points > lower + 1e-9, axis=1)
+        & np.all(points < upper - 1e-9, axis=1)
+    ]
+    return any(
+        origin_inside_closed_mesh(vertices - point, triangles)
+        for point in candidates
+    )
+
+
+def _floor_size_for_phase(phase: CollisionPhase, minimum_extent_m: float) -> tuple[float, float]:
+    """Keep the nominal floor and extend it around imported environment geometry."""
+
+    half = np.full(2, minimum_extent_m / 2.0, dtype=float)
+    if not phase.meshes:
+        return float(2.0 * half[0]), float(2.0 * half[1])
+    for mesh in phase.meshes:
+        if not mesh.collision_enabled:
+            continue
+        bounds = mesh_collision_geometry(mesh).aabb_local
+        half = np.maximum(
+            half,
+            np.maximum(np.abs(bounds.min_[:2]), np.abs(bounds.max_[:2])) + 0.7,
+        )
+    for obstacle in phase.obstacles:
+        if not obstacle.collision_enabled:
+            continue
+        rotation = np.abs(yaw_matrix(math.radians(obstacle.yaw_deg))[:2, :2])
+        extent = rotation @ (np.asarray(obstacle.size_m[:2]) / 2.0)
+        half = np.maximum(half, np.abs(obstacle.center_m[:2]) + extent + 0.7)
+    return float(2.0 * half[0]), float(2.0 * half[1])
 
 
 def _pair_is_allowed(

@@ -7,7 +7,11 @@ import math
 
 import numpy as np
 
-from .models import BoxPrimitive, SceneSpec
+from .mesh_geometry import (
+    mesh_component_topology,
+    origin_inside_closed_mesh as _origin_inside_closed_mesh,
+)
+from .models import BoxPrimitive, MeshObstacle, SceneSpec
 from .scene import SceneSnapshot
 
 
@@ -44,8 +48,9 @@ def validate_base_placement(
     spanning from the floor to its candidate base height.  Its footprint must
     remain inside the configured axis-aligned installation rectangle.  Static
     collision boxes and the other pedestal are checked using exact rectangle
-    SAT in XY plus interval overlap in Z.  Mere contact is allowed at zero
-    clearance.
+    SAT in XY plus interval overlap in Z.  Static meshes use their triangles,
+    with a containment check for closed surfaces.  Mere contact is allowed at
+    zero clearance.
 
     A positive clearance creates a rectangular safety envelope around each
     pedestal.  For pedestal/static checks the full clearance is applied to the
@@ -76,6 +81,9 @@ def validate_base_placement(
     static_collision_boxes = tuple(
         box for box in spec.static_boxes if box.collision_enabled
     )
+    static_collision_meshes = tuple(
+        mesh for mesh in spec.static_meshes if mesh.collision_enabled
+    )
     for pedestal in pedestals:
         expanded = _inflate_box(pedestal, clearance)
         for obstacle in static_collision_boxes:
@@ -86,6 +94,19 @@ def validate_base_placement(
                         objects=(pedestal.name, obstacle.name),
                         message=(
                             f"{pedestal.name} overlaps fixed collision box "
+                            f"{obstacle.name}"
+                        ),
+                    )
+                )
+
+        for obstacle in static_collision_meshes:
+            if _mesh_overlap_3d(expanded, obstacle):
+                issues.append(
+                    PlacementIssue(
+                        code="static_mesh_overlap",
+                        objects=(pedestal.name, obstacle.name),
+                        message=(
+                            f"{pedestal.name} overlaps fixed collision mesh "
                             f"{obstacle.name}"
                         ),
                     )
@@ -197,6 +218,69 @@ def _rectangle_axes(yaw_deg: float) -> tuple[np.ndarray, np.ndarray]:
         np.array((cosine, sine), dtype=float),
         np.array((-sine, cosine), dtype=float),
     )
+
+
+def _mesh_overlap_3d(box: BoxPrimitive, mesh: MeshObstacle) -> bool:
+    """Test the actual mesh surface and its closed interior against a yaw box.
+
+    Transforming world vertices into the pedestal frame keeps the query exact
+    for any pedestal yaw.  Mesh AABBs only prune triangles; they never decide
+    a collision, so separated parts and concave gaps remain available.
+    """
+
+    vertices = np.asarray(mesh.vertices_m, dtype=float)
+    triangles = np.asarray(mesh.triangles, dtype=np.intp)
+    x_axis, y_axis = _rectangle_axes(box.yaw_deg)
+    rotation = np.array(
+        ((x_axis[0], y_axis[0], 0.0), (x_axis[1], y_axis[1], 0.0), (0.0, 0.0, 1.0))
+    )
+    local_vertices = (vertices - np.asarray(box.center_m, dtype=float)) @ rotation
+    half = np.asarray(box.size_m, dtype=float) / 2.0
+    lower = np.min(local_vertices, axis=0)
+    upper = np.max(local_vertices, axis=0)
+    if np.any(upper <= -half + _CONTACT_TOLERANCE_M) or np.any(
+        lower >= half - _CONTACT_TOLERANCE_M
+    ):
+        return False
+    faces = local_vertices[triangles]
+    candidate_faces = faces[
+        np.all(np.max(faces, axis=1) > -half + _CONTACT_TOLERANCE_M, axis=1)
+        & np.all(np.min(faces, axis=1) < half - _CONTACT_TOLERANCE_M, axis=1)
+    ]
+    for face in candidate_faces:
+        if _triangle_intersects_box_interior(face, half):
+            return True
+
+    # Triangle/box SAT cannot see a box entirely enclosed by a closed shell.
+    # Only closed meshes acquire a solid interior; open sheets remain surfaces.
+    if np.all(lower < 0.0) and np.all(upper > 0.0):
+        _, closed_triangles = mesh_component_topology(vertices, triangles)
+        if len(closed_triangles):
+            return _origin_inside_closed_mesh(local_vertices, closed_triangles)
+    return False
+
+
+def _triangle_intersects_box_interior(face: np.ndarray, half: np.ndarray) -> bool:
+    edges = (face[1] - face[0], face[2] - face[1], face[0] - face[2])
+    box_axes = np.eye(3)
+    axes = [*box_axes, np.cross(edges[0], edges[1])]
+    axes.extend(np.cross(edge, axis) for edge in edges for axis in box_axes)
+    for axis in axes:
+        length = float(np.linalg.norm(axis))
+        if length <= np.finfo(float).eps:
+            continue
+        unit_axis = axis / length
+        projections = face @ unit_axis
+        radius = float(half @ np.abs(unit_axis))
+        # A triangle has zero extent along its normal.  Comparing against the
+        # box boundaries (rather than interval overlap depth) still detects a
+        # triangle plane crossing the interior, while allowing pure contact.
+        if (
+            float(np.max(projections)) <= -radius + _CONTACT_TOLERANCE_M
+            or float(np.min(projections)) >= radius - _CONTACT_TOLERANCE_M
+        ):
+            return False
+    return True
 
 
 def _inflate_box(box: BoxPrimitive, margin: float) -> BoxPrimitive:
