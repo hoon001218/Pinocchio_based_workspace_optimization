@@ -92,6 +92,12 @@ before running the commands.
 
 ## Use a USD environment
 
+Download the USD archive and asset files from
+http://irol.iptime.org/public/share/fmJieNofpXugLi-i2Juqvw, then place the
+downloaded ZIP file and the extracted USD files under the repository's `USD/`
+directory. The full-cell environment should be available as
+`USD/cu_usd_simplified.usd` before running the commands below.
+
 Read an unsimplified polygon-mesh environment directly while retaining the
 configured task frames and robot URDFs:
 

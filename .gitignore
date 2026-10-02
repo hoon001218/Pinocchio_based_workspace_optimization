@@ -209,4 +209,5 @@ AMENT_IGNORE
 # End of https://www.toptal.com/developers/gitignore/api/python,ros2
 
 USD/Collected_scene_layout
+USD/Collected_scene_layout.zip
 USD/cu_usd_simplified.usd
