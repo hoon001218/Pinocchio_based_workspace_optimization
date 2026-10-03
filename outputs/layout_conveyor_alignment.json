@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "source": "USD\\Collected_scene_layout\\scene_layout.usd",
+  "backup": ".cache\\layout_source_backup\\scene_layout.before_conveyor_connection.usd",
+  "moving_prim": "/World/ConveyorGroup/ConveyorBelt_A25",
+  "anchor_prim": "/World/ConveyorGroup/conv_top/ConveyorBelt_A05_PR_NVD_04",
+  "moving_surface": "/World/ConveyorGroup/ConveyorBelt_A25/Belt/SM_ConveyorBelt_A25_Belt01_02",
+  "anchor_surface": "/World/ConveyorGroup/conv_top/ConveyorBelt_A05_PR_NVD_04/roller_surface",
+  "tolerance_m": 1e-06,
+  "changed": true,
+  "original_translate": [
+    -2.2624179064713212,
+    -2.777131245172553,
+    0.3109543168508667
+  ],
+  "updated_translate": [
+    -2.2624179064713212,
+    -2.777131245172553,
+    0.3396173042475136
+  ],
+  "local_delta": [
+    0.0,
+    0.0,
+    0.028662987396646855
+  ],
+  "world_delta_m": [
+    0.0,
+    0.0,
+    0.028662987396646855
+  ],
+  "before": {
+    "world_delta_m": [
+      0.0,
+      0.0,
+      0.028662987396646855
+    ],
+    "anchor_top_z_m": 2.379307098388672,
+    "a25_high_top_z_m": 2.3506441109920253,
+    "xy_overlap_m": [
+      0.6230555595493257,
+      0.7200014409202176
+    ]
+  },
+  "after": {
+    "world_delta_m": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "anchor_top_z_m": 2.379307098388672,
+    "a25_high_top_z_m": 2.3793070983886735,
+    "xy_overlap_m": [
+      0.6230555595493257,
+      0.7200014409202176
+    ]
+  },
+  "preserved": {
+    "nodes": 70,
+    "boxes": 36,
+    "robots": 2,
+    "frames": 5,
+    "reference_dimensions": 5
+  },
+  "baseline_source_sha256": "39b1880ba6e8deb7684cad611c0ce4ba37e452e904d90165c16e7e167cc297a4",
+  "updated_source_sha256": "920315902b0b69d2bdb668836219e94141b6b888b8af47dcca243876119c6ae5",
+  "backup_sha256": "39b1880ba6e8deb7684cad611c0ce4ba37e452e904d90165c16e7e167cc297a4"
+}

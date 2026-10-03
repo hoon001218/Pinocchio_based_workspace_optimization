@@ -1,8 +1,19 @@
 # 개발 인수인계
 
-마지막 정리일: 2026-08-31
+마지막 정리일: 2026-10-03
 
 이 문서는 다른 컴퓨터와 다른 개발자가 현재 작업을 이어가기 위한 실행·의사결정 기록이다. 코드 계층과 데이터 흐름은 [ARCHITECTURE.md](ARCHITECTURE.md), 사용자 명령의 전체 옵션은 [README.md](../README.md)를 먼저 함께 확인한다.
+
+2026-10-03 현재 작업 범위는 `Collected_scene_layout` 기반 **단순화 환경 구성**이다.
+`decanting-layout --open`으로 그룹과 주요 하위 요소의 위치를 조정한다. 예시 SKU·토트와
+컨베이어 다리를 제외하고 환경의 겹친 부피는 한 요소에만 남긴다. 로봇 장착 XYZ는
+USD에서 읽으며 URDF·회전·관절 설정은 유지한다. 최적화는 이후 단계로 미뤘다.
+A25의 높은 쪽 운송면은 `conv_top`에 맞춰 USD에서 약 28.663 mm 올렸고,
+ToteGroup·UncaseGroup의 위치는 유지한다. 카메라는 왼쪽 회전·가운데/오른쪽
+이동·휠 줌과 정면/측면/상단/처음 보기 버튼을 제공한다. 카메라 위치와 회전 중심은
+World XYZ 좌표를 사용하며 초기 보기는 바닥·벽을 제외한 작업 셀과 로봇에 맞춘다.
+구성·실행 규칙은 [USD_LAYOUT.md](USD_LAYOUT.md)에 정리했다. 아래 공정 평가 결정은
+기존 `decanting-live` 계층의 기록이며 새 환경 경로의 이동 범위를 제한하지 않는다.
 
 ## 1. 최종 목표
 
@@ -248,7 +259,7 @@ conda run -n pinocchio-workspace python -m pytest
 conda run -n pinocchio-workspace decanting-setup
 ```
 
-2026-09-01 기준 통합 baseline은 `227 passed`, 기존 MeshCat/pyzmq deprecation
+2026-10-03 기준 통합 baseline은 `385 passed`, 기존 MeshCat/pyzmq deprecation
 warning 1건이다. 테스트 수는 기능 추가에 따라 바뀌므로 고정된 개수보다 전체
 suite가 성공하는지를 기준으로 한다.
 

@@ -12,6 +12,11 @@
 [USD_SCENES.md](USD_SCENES.md)를 참고한다. 저장소의 전체 셀 USD는
 `decanting-live --config config\cell_usd.yaml --open`으로 실행한다.
 
+USD 그룹으로 단순화 환경을 생성하고 위치를 조정하려면
+`python -m decanting_workspace.layout_cli --config config\cell_layout.yaml --open`을
+사용한다. 예시 SKU·컨베이어 다리 제외와 겹침 제거 규칙은
+[USD_LAYOUT.md](USD_LAYOUT.md)를 참고한다.
+
 ## 1. 처음 한 번만 수행하는 설치
 
 ### 1.1 저장소 받기

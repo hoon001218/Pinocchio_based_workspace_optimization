@@ -92,6 +92,12 @@ before running the commands.
 
 ## Use a USD environment
 
+For the simplified, editable layout built from USD groups and child elements,
+run `python -m decanting_workspace.layout_cli --config config/cell_layout.yaml --open`.
+This mode excludes example SKUs, tote solids and conveyor legs, retains tote dimensions as references, and uses USD robot base positions
+with URDF/Pinocchio models, and removes overlapping environment volumes.
+See [USD layout](docs/USD_LAYOUT.md) for translation controls and export.
+
 Download the USD archive and asset files from
 http://irol.iptime.org/public/share/fmJieNofpXugLi-i2Juqvw, then place the
 downloaded ZIP file and the extracted USD files under the repository's `USD/`

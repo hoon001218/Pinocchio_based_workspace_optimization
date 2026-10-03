@@ -1,0 +1,17 @@
+# Geometry and initial translations come from USD; URDF rotations/postures
+# retain the existing robot configuration. This mode has no SKU scenarios.
+base_config: cell_nominal.yaml
+
+usd_layout:
+  file: ../USD/Collected_scene_layout/scene_layout.usd
+  groups:
+    - /World/ConveyorGroup
+    - /World/UncaseGroup
+    - /World/LoadGroup
+    - /World/PalletGroup
+    - /World/ToteGroup
+    - /World/GroundPlane
+  include_invisible: true
+  robot_base_prims:
+    ur20: /World/LoadGroup/RB/ur20/base_link
+    sr12ia: /World/UncaseGroup/RB/sr12ia/robot_base/base_link

@@ -27,6 +27,19 @@ Isaac Sim, ROS, MoveIt은 실행 의존성이 아니다. 기본 실행에서는 
 
 ## 2. 핵심 계약
 
+별도 환경 구성 경로는 `decanting-layout`이다. `usd_layout.py`가 그룹 계층과
+회전이 보존된 `LayoutBox`, USD base-link XYZ와 기존 URDF 설정을 가진
+`LayoutRobot`을 `LayoutScene`에 담는다. `layout.py`는 부모 좌표축 기준 XYZ
+이동만 적용하고, `layout_geometry.py`는 원래 박스에서 겹친 부피를 잘라
+단일 소유자의 convex fragment를 만든다. `layout_backend.py`와 `layout_ui.py`가
+위치 조정·초기화·JSON 저장을 제공하며 `layout_viewer.py`는 이 fragment와
+Pinocchio URDF 로봇을 표시한다. USD 토트는 치수 참조만 보관하며 환경 형상으로
+생성하지 않는다. layout의 카메라는 Scene/카메라 부모 변환을 identity로 두고
+World Z-up 위치와 회전 중심을 사용한다. Z-up 설정 후 OrbitControls를 생성하며,
+초기 focus에는 방 벽과 바닥을 포함하지 않는다.
+SKU, 공정 평가와 최적화는 이 경로에 없으며
+기존 `SceneSpec` 평가 입력과 분리되어 있다. [USD_LAYOUT.md](USD_LAYOUT.md)를 참고한다.
+
 ### 좌표계와 단위
 
 - 계산 내부 단위는 metre와 radian이다.

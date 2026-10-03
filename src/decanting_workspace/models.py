@@ -364,11 +364,12 @@ def _read_scene_configuration(
             if isinstance(robot, Mapping) and "urdf" in robot:
                 robots[name] = {**robot, "urdf": str((path.parent / str(robot["urdf"])).resolve())}
         raw["robots"] = robots
-    if isinstance(raw.get("usd_scene"), Mapping) and "file" in raw["usd_scene"]:
-        raw["usd_scene"] = {
-            **raw["usd_scene"],
-            "file": str((path.parent / str(raw["usd_scene"]["file"])).resolve()),
-        }
+    for section in ("usd_scene", "usd_layout"):
+        if isinstance(raw.get(section), Mapping) and "file" in raw[section]:
+            raw[section] = {
+                **raw[section],
+                "file": str((path.parent / str(raw[section]["file"])).resolve()),
+            }
     return _merge_scene_configuration(inherited, raw)
 
 
